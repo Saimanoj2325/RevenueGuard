@@ -1,0 +1,143 @@
+{
+ "at": "2026-10-16T03:41:16.339858+00:00",
+ "cases": 10,
+ "oracle_correct": 10,
+ "model": null,
+ "skipped_model": "NVIDIA_API_KEY not set: real model not run",
+ "rows": [
+  {
+   "name": "two different challans add up",
+   "expect": {
+    "total": 100,
+    "meaning": [
+     "delivery"
+    ]
+   },
+   "oracle": {
+    "total": 100.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "correction replaces the earlier count",
+   "expect": {
+    "total": 100,
+    "meaning": [
+     "correction"
+    ]
+   },
+   "oracle": {
+    "total": 100.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "Hinglish extra delivery",
+   "expect": {
+    "total": 100,
+    "meaning": [
+     "extra_delivery"
+    ]
+   },
+   "oracle": {
+    "total": 100.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "same photo resent (duplicate status)",
+   "expect": {
+    "total": 60,
+    "meaning": [
+     "duplicate"
+    ]
+   },
+   "oracle": {
+    "total": 60.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "edited 60 -> 100",
+   "expect": {
+    "total": 100,
+    "meaning": [
+     "correction",
+     "edit"
+    ]
+   },
+   "oracle": {
+    "total": 100.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "deleted message no longer counts",
+   "expect": {
+    "total": 60,
+    "meaning": [
+     "retraction"
+    ]
+   },
+   "oracle": {
+    "total": 60.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "two open POs, message names none",
+   "expect": {
+    "link": "ask_which_po",
+    "meaning": [
+     "delivery",
+     "extra_delivery",
+     "question"
+    ]
+   },
+   "oracle": {
+    "link": "ask_which_po"
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "same challan number photographed twice",
+   "expect": {
+    "total": 60,
+    "meaning": [
+     "delivery",
+     "duplicate"
+    ]
+   },
+   "oracle": {
+    "total": 60.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "Telugu: inka nalabhai vachayi (40 more came)",
+   "expect": {
+    "total": 100,
+    "meaning": [
+     "extra_delivery"
+    ]
+   },
+   "oracle": {
+    "total": 100.0
+   },
+   "oracle_ok": true
+  },
+  {
+   "name": "payment message does not change delivery",
+   "expect": {
+    "total": 60,
+    "meaning": [
+     "payment"
+    ]
+   },
+   "oracle": {
+    "total": 60.0
+   },
+   "oracle_ok": true
+  }
+ ]
+}

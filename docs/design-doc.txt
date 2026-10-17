@@ -1,0 +1,853 @@
+Finding the missing step between an order and its payment.
+
+RevenueGuard AI helps small B2B manufacturers, distributors and job-work
+businesses investigate transaction gaps across the tools they already
+use. It connects evidence, explains what is missing, and helps the team
+take the next safe action.
+
+  -----------------------------------------------------------------------
+  At a glance                         Product direction
+  ----------------------------------- -----------------------------------
+  Problem                             Order, delivery, invoice and
+                                      payment records are spread across
+                                      separate tools.
+
+  Our system                          Builds a source-linked transaction
+                                      timeline and investigates missing
+                                      or conflicting links.
+
+  Safety                              Keeps financial changes behind
+                                      explicit approval and checks the
+                                      result in the target system.
+
+  Success measure                     Less time spent investigating
+                                      exceptions, without increasing
+                                      incorrect or duplicate actions.
+  -----------------------------------------------------------------------
+
+1. The problem
+
+Small B2B businesses often use several systems to complete one
+transaction. An order may be confirmed in Gmail or WhatsApp, delivery
+proof may sit in an operations sheet, invoices may live in accounting
+software, and payments may appear in bank records. When one link is
+missing, staff have to search across these systems and work out what
+happened.
+
+Accounting systems already create invoices and reconcile many
+transactions. Our focus is the investigation that happens when the
+records do not line up: is the invoice genuinely missing, was delivery
+partial, is the invoice stored under another reference, or is billing
+not due yet?
+
+Example: an order with a missing invoice
+
+  -----------------------------------------------------------------------
+  Record                  Evidence found          What our system checks
+                                                  next
+  ----------------------- ----------------------- -----------------------
+  Order email             A customer confirms     Does this order
+                          PO-184 for ₹1,00,000.   reference appear in
+                                                  other records?
+
+  WhatsApp                The operations team     Does the message refer
+                          discusses delivery and  to PO-184, and what
+                          shares a delivery       quantity was delivered?
+                          update.                 
+
+  Delivery record         The record shows 60 of  Does the billing policy
+                          100 units delivered.    allow an invoice for
+                                                  the delivered quantity?
+
+  Accounting              No invoice is found     Could the invoice exist
+                          under the first         under an alternate ID
+                          reference searched.     or customer reference?
+  -----------------------------------------------------------------------
+
+Our system does not create a full ₹1,00,000 invoice simply because the
+first search returns no invoice. It gathers more evidence, shows what
+remains uncertain, and proposes an action that matches the evidence and
+billing rules. A person approves any consequential financial change, and
+the system reads the accounting record back before marking the case
+resolved.
+
+This is an example of intended behavior, not a claim that the product
+has already been validated on live business records.
+
+[]
+
+2. Why the problem matters
+
+  -----------------------------------------------------------------------
+  Impact area             What can happen today   What RevenueGuard AI is
+                                                  intended to improve
+  ----------------------- ----------------------- -----------------------
+  Cash-flow visibility    A team cannot quickly   Show the current
+                          tell whether a          transaction stage and
+                          transaction is waiting  the evidence behind it.
+                          for delivery proof,     
+                          invoicing or payment    
+                          follow-up.              
+
+  Staff time              People repeatedly       Collect relevant
+                          search inboxes,         evidence in one case
+                          messages, spreadsheets  and suggest the next
+                          and accounting screens. useful check.
+
+  Financial accuracy      A rushed response can   Check quantities,
+                          create a duplicate      references, billing
+                          invoice or bill for     rules and existing
+                          goods not yet           invoices before
+                          delivered.              proposing a write.
+
+  Customer relationships  Teams may send          Ground follow-ups in
+                          confusing reminders     the transaction record
+                          because payment or      and require approval
+                          delivery context is     for sensitive messages.
+                          incomplete.             
+  -----------------------------------------------------------------------
+
+Late payment is a wider MSME concern, but it is not the same as a
+missing order-to-invoice link. We will validate the specific
+investigation problem with businesses in our target segment rather than
+assuming that industry-wide payment-delay figures prove demand for this
+product.
+
+3. Research and idea discovery
+
+Reports and product documentation
+
+  -----------------------------------------------------------------------
+  Source                  What it helps establish Limit to keep in mind
+  ----------------------- ----------------------- -----------------------
+  SIDBI MSME Outlook      Provides context on     Use the report’s exact
+  Survey, Round 2         debtor-realisation      categories, period and
+                          delays in the surveyed  denominator; it does
+                          population.             not prove how often
+                                                  order-to-invoice links
+                                                  go missing.
+
+  Economic Times report   Reports overdue B2B     The sample is not a
+  on a Recordent survey   payments in the sample  census of all Indian
+                          described by the        MSMEs.
+                          survey.                 
+
+  TallyPrime and Zoho     Shows that accounting   RevenueGuard AI should
+  Books documentation     tools already support   complement these
+                          important invoice,      systems, not claim that
+                          banking and             they lack core
+                          reconciliation          accounting features.
+                          workflows.              
+
+  HighRadius and UiPath   Shows existing          The proposed
+  product material        accounts-receivable     distinction needs to be
+                          automation and general  tested; we should not
+                          automation              claim competitors lack
+                          capabilities.           AI or automation.
+  -----------------------------------------------------------------------
+
+Community discussions
+
+Small-business discussions about overdue invoices describe repeated
+reminders, partial payments and the difficulty of protecting a customer
+relationship while following up. We use these as qualitative signals
+only; they are not representative surveys.
+
+-   Reddit discussion: How do you actually handle clients who pay
+    invoices late?
+    https://www.reddit.com/r/smallbusiness/comments/1s22yzq/how_do_you_actually_handle_clients_who_pay/
+
+-   Reddit discussion: How to get a very financially important client to
+    pay overdue invoices?
+    https://www.reddit.com/r/smallbusiness/comments/1j3e470/how_to_get_a_very_financially_important_client_to/
+
+Our research supports a plausible problem, but it does not yet establish
+the frequency of missing or mismatched transaction links among Indian
+manufacturers and job-work businesses. That is one of the assumptions we
+will test through customer conversations and labeled cases.
+
+4. How our system works
+
+-   Source-Linked Connectors: Our connector layer reads authorized
+    records from Gmail, WhatsApp and connected business systems. It
+    keeps the source ID and timestamp so that every important finding
+    can be traced back to its origin.
+
+-   Data Normalization: Our processing layer converts different formats
+    into common fields such as customer, order reference, quantity,
+    amount, delivery date, invoice ID and payment reference. It removes
+    duplicate events without discarding the source record.
+
+-   Timeline Building: Our case builder links the records into an order
+    → delivery → invoice → payment timeline. It leaves missing or
+    conflicting links visible instead of silently guessing.
+
+-   Deterministic Validation: Our deterministic checks handle exact work
+    such as arithmetic, duplicate detection, ID matching, quantity
+    checks and configured billing rules.
+
+-   Adaptive Investigation: Our investigation workflow looks at the
+    current evidence gap and chooses the next useful read-only check. It
+    can search alternate references, messages, delivery records,
+    accounting records or payment records.
+
+-   Evidence-Backed Proposals: Our resolution step explains what the
+    evidence supports, points to the relevant sources, states
+    uncertainty and proposes the next action.
+
+-   Human-in-the-Loop Approval: Our approval screen shows the exact
+    proposed change, customer, amount, supporting evidence and risk. An
+    authorized person approves or rejects the action.
+
+Verified Action Execution: Our action gateway performs only the approved
+action. An independent verifier then reads the target system back and
+checks the important fields before the case can be closed.
+
+5. Existing systems and our solution
+
+  -----------------------------------------------------------------------
+  System or alternative   What it already does    Our intended role
+  ----------------------- ----------------------- -----------------------
+  TallyPrime              Accounting,             Use accounting records
+                          invoices/vouchers and   as a source of truth
+                          bank reconciliation.    and investigate context
+                                                  from email, WhatsApp
+                                                  and operations records
+                                                  before proposing a
+                                                  correction.
+
+  Zoho Books              Sales orders, invoices, Connect its records to
+                          reminders, bank feeds   evidence from other
+                          and reconciliation.     tools and investigate
+                                                  exceptions that cross
+                                                  system boundaries.
+
+  HighRadius              Accounts-receivable     Focus on an accessible,
+                          automation, collections evidence-linked
+                          and cash application    investigation workflow
+                          capabilities.           for the smaller B2B
+                                                  operations we target.
+
+  UiPath and general      Automate workflows      Provide a focused
+  workflow automation     across systems,         transaction
+                          including increasingly  investigation and
+                          agentic automation      verified-closure
+                          capabilities.           workflow rather than a
+                                                  general automation
+                                                  platform.
+  -----------------------------------------------------------------------
+
+This is a product-positioning comparison, not an exhaustive feature
+audit. Capabilities vary by product, plan and integration. We will test
+our approach against simpler baselines rather than assume it is better.
+
+6. What may distinguish our approach
+
+  -----------------------------------------------------------------------
+  Design idea             How our system uses it  How we will test it
+  ----------------------- ----------------------- -----------------------
+  Evidence-linked         Every material          Measure the share of
+  transaction timeline    conclusion points to a  recommendations with
+                          message, delivery       traceable evidence and
+                          record, invoice or      count unsupported
+                          payment record.         conclusions.
+
+  Adaptive investigation  The next check depends  Compare useful
+                          on what is missing,     next-tool selection and
+                          rather than following   resolution results with
+                          one fixed tool          a fixed-sequence agent.
+                          sequence.               
+
+  Hybrid reasoning        Code handles exact      Measure error types
+                          amounts, IDs,           separately for
+                          duplicates and          deterministic checks
+                          configured rules; AI    and AI-generated
+                          interprets unstructured conclusions.
+                          messages and explains   
+                          ambiguity.              
+
+  Approval-bound actions  Financial writes and    Test that unapproved,
+                          sensitive messages      stale or altered
+                          require approval of the actions are blocked.
+                          exact action payload    
+                          and evidence version.   
+
+  Independent             After a write, our      Measure verified
+  verification            system reads the target closure and test
+                          record back before it   timeout,
+                          closes the case.        duplicate-event and
+                                                  partial-failure
+                                                  scenarios.
+  -----------------------------------------------------------------------
+
+These are candidate differentiators, not claims that we are the first to
+use them. Our main hypothesis is that combining cross-tool evidence
+gathering, adaptive investigation and safe verified closure can reduce
+manual work for a clearly defined small-business workflow.
+
+7. Technical decisions and rationale
+
+We compared practical alternatives before settling on the design below.
+These choices keep the workflow understandable while preserving
+recovery, traceability and control over financial actions.
+
+  --------------------------------------------------------------------------
+  Area              Our decision        Alternatives we    Why we chose this
+                                        considered         direction
+  ----------------- ------------------- ------------------ -----------------
+  Product scope     Focus on            Generic finance    A defined
+                    order-to-cash       assistant; full    transaction
+                    exceptions: order,  ERP replacement;   journey makes
+                    delivery/job        collections-only   expected stages,
+                    completion, invoice product.           evidence links
+                    and payment.                           and success
+                                                           measures clear.
+
+  Agent             One orchestrator    Many autonomous    One controlled
+  architecture      coordinates triage, agents running as  workflow is
+                    evidence            separate services; easier to trace,
+                    collection,         one large prompt   pause, resume and
+                    deterministic       doing everything.  audit, while each
+                    checks,                                step still has a
+                    investigation,                         clear
+                    proposal, approval,                    responsibility.
+                    execution and                          
+                    verification.                          
+
+  Workflow state    Persist case state  Stateless calls;   Cases must retain
+                    and checkpoints so  in-memory loop;    progress and
+                    work can pause for  distributed        approval state
+                    approval or resume  workflow           through restarts,
+                    after a failure.    infrastructure     timeouts and
+                                        from day one.      provider limits.
+
+  Gmail integration Use authorized      Password scraping; Scoped OAuth
+                    Gmail API/OAuth     broad mailbox      access supports
+                    with minimum        access; manual     consent,
+                    required scopes and export as the only revocation and
+                    revocable access.   path.              auditability.
+
+  WhatsApp          Keep WhatsApp       Official WhatsApp  Baileys may help
+  integration       behind a connector  Business Platform; with an initial
+                    interface. Baileys  no WhatsApp        connector but is
+                    is a possible       integration;       unofficial and
+                    technical route,    brittle browser    may be less
+                    subject to platform scripting.         stable. We will
+                    and account-risk                       review policy,
+                    review.                                reliability and
+                                                           official API fit
+                                                           before production
+                                                           use.
+
+  Business systems  Keep accounting and Copy all records   RevenueGuard AI
+                    operations tools as into a replacement investigates and
+                    the source of       finance database;  coordinates; it
+                    truth; use          write directly     does not replace
+                    supported APIs and  without checks.    the customer’s
+                    scoped credentials.                    accounting
+                                                           system.
+
+  Data storage      Use PostgreSQL for  Vector database    Relational
+                    case state, events, for all data;      storage fits
+                    source references,  spreadsheet-only   transaction IDs
+                    approvals,          state; raw         and workflow
+                    idempotency and     messages stored in state. Vector
+                    audit metadata;     prompts.           search is
+                    store large                            optional only if
+                    documents                              evaluation shows
+                    separately.                            semantic
+                                                           retrieval is
+                                                           useful.
+
+  AI service layer  Use bounded AI      Hard-code one      A contained AI
+                    calls with          model directly     boundary makes
+                    structured-output   into every         failures easier
+                    validation,         workflow step;     to handle and
+                    cost/time limits    allow unbounded    keeps invalid
+                    and recorded        calls.             outputs away from
+                    results.                               action tools.
+
+  Action policy     Require approval    Let the model      The model must
+                    for financial       execute any tool;  not be the
+                    writes and          trust confidence   authority for
+                    sensitive external  scores; blindly    financial
+                    messages; bind      retry failed       actions. Policy
+                    approval to the     writes.            checks belong in
+                    exact action and                       ordinary code.
+                    verify after                           
+                    execution.                             
+
+  Deployment shape  Start with a        Microservices and  This keeps the
+                    modular             Kubernetes from    first
+                    application, API,   day one; one       implementation
+                    durable workflow,   monolith with no   manageable while
+                    PostgreSQL and      module boundaries. allowing services
+                    background workers                     to split when
+                    where needed.                          real load or
+                                                           ownership
+                                                           boundaries
+                                                           justify it.
+
+  Evaluation        Compare rules-only  Show only a        The product’s
+                    matching, a         successful         value depends on
+                    fixed-sequence LLM  example; judge     measured
+                    workflow and        quality from model accuracy, safe
+                    adaptive            confidence alone.  behavior and
+                    evidence-guided                        investigation
+                    investigation on                       efficiency.
+                    the same labeled                       
+                    cases.                                 
+  --------------------------------------------------------------------------
+
+  -------------------------------------------------------------------------
+  Area                    What our system uses      Why this helps
+  ----------------------- ------------------------- -----------------------
+  Application structure   A modular application     We can change one part
+                          with separate connector,  without rewriting the
+                          investigation, approval   whole workflow, which
+                          and verification modules. makes maintenance and
+                                                    fault isolation easier.
+
+  Workflow state          A durable, checkpointed   If a connector or model
+                          case workflow with        call fails, the system
+                          explicit stages.          can resume from saved
+                                                    state instead of
+                                                    repeating every earlier
+                                                    step.
+
+  API layer               FastAPI for authenticated A consistent API
+                          application and connector boundary makes
+                          endpoints.                integrations easier to
+                                                    test and gives us one
+                                                    place to validate
+                                                    requests.
+
+  Case database           PostgreSQL for case       Structured records
+                          state, source references, support reliable
+                          approvals and audit       queries, tenant-aware
+                          events.                   access and transaction
+                                                    consistency.
+
+  Document storage        Object storage for        Keeping large files
+                          permitted attachments and outside the main case
+                          large documents, with     tables avoids bloating
+                          references stored in case common queries.
+                          records.                  
+
+  Background work         A queue and workers for   Slow external APIs do
+                          long investigations,      not block user
+                          scheduled sync and        requests, and
+                          retryable tasks.          backpressure helps the
+                                                    system remain stable
+                                                    during bursts.
+
+  Business tools          Connector adapters for    Adapters keep
+                          Gmail, WhatsApp and the   vendor-specific details
+                          selected                  out of the
+                          ERP/accounting/delivery   investigation logic and
+                          systems.                  let us test
+                                                    integrations
+                                                    independently.
+
+  Exact validation        Deterministic code for    Exact financial facts
+                          totals, quantities,       should not depend on an
+                          references, duplicate     LLM’s free-form
+                          checks and configured     arithmetic.
+                          billing rules.            
+
+  AI outputs              Structured outputs with   Invalid responses are
+                          schema validation,        rejected or escalated
+                          bounded retries and       rather than passed into
+                          explicit stop conditions. tools unchecked.
+
+  Action control          A dedicated action        This limits the impact
+                          gateway with permissions, of model mistakes and
+                          approval checks,          prevents a retry from
+                          idempotency keys and      creating the same
+                          audit events.             financial change twice.
+  -------------------------------------------------------------------------
+
+8. System architecture
+
+The diagram below shows the main runtime path. Business records enter
+through connector adapters, the investigation engine builds and updates
+a case, a person approves consequential actions, and the verifier checks
+the result in the target system.
+
+[]
+
+Figure 1. RevenueGuard AI system architecture.
+
+Component responsibilities
+
+  -----------------------------------------------------------------------
+  Component                           What it does in our system
+  ----------------------------------- -----------------------------------
+  Connector adapters                  Authenticate, fetch permitted
+                                      records, normalize payloads and
+                                      attach source IDs.
+
+  Secure intake                       Validate incoming data, enforce
+                                      tenant boundaries, deduplicate
+                                      events and reject malformed
+                                      payloads.
+
+  Orchestrator                        Coordinate the workflow, maintain
+                                      case state and checkpoint progress
+                                      between stages.
+
+  Triage and evidence steps           Identify the exception, retrieve
+                                      relevant records and build the
+                                      source-linked transaction timeline.
+
+  Investigation step                  Run allowed searches and checks
+                                      based on the current evidence gap;
+                                      stop or escalate when evidence is
+                                      insufficient.
+
+  Resolution step                     Prepare an evidence-backed proposal
+                                      and identify uncertainty or policy
+                                      conflicts.
+
+  Action gateway                      Check permissions and approval,
+                                      enforce idempotency, perform the
+                                      permitted write and record the
+                                      outcome.
+
+  Independent verifier                Read the target system back and
+                                      compare the actual result with the
+                                      approved action.
+
+  Shared case state                   Store evidence links, intermediate
+                                      findings, decisions, approvals,
+                                      retries and final outcomes.
+  -----------------------------------------------------------------------
+
+9. Evaluation approach and success measures
+
+We will evaluate RevenueGuard AI on labeled cases before relying on it
+for real financial workflows. We will compare it with simpler
+approaches, inspect its mistakes and report measured results rather than
+presenting targets as achieved performance.
+
+Evaluation plan
+
+1. We will create 100–200 synthetic cases with known outcomes. The cases
+will include genuinely missing invoices, alternate references, valid
+billing delays, partial delivery, duplicate invoices, partial payments,
+conflicting quantities, stale evidence, duplicate events, connector
+timeouts, invalid model output and revoked approvals.
+
+2. We will reserve a held-out test set that we do not use to tune
+prompts, rules or thresholds.
+
+3. We will run three approaches on the same cases: rules-only matching,
+an LLM using a fixed tool sequence, and our adaptive evidence-guided
+investigation workflow.
+
+4. We will save the evidence, tool calls, model/provider version,
+latency, cost, approval decision, verification result and failure reason
+for each case.
+
+5. We will report metrics with their denominators, show representative
+failure cases, and separate results by scenario type. We will not claim
+a performance improvement unless the test results support it.
+
+Metrics we will report
+
+  -----------------------------------------------------------------------
+  Metric                  How we will calculate   Why we need it
+                          it                      
+  ----------------------- ----------------------- -----------------------
+  Exception precision     True positive           Shows how often alerts
+                          exceptions ÷ all        are worth reviewing.
+                          flagged exceptions.     
+
+  Exception recall        True positive           Shows how many real
+                          exceptions ÷ all        problems the system
+                          genuine exceptions in   misses.
+                          the labeled set.        
+
+  False-positive rate     False positives ÷ all   Shows how often valid
+                          genuine non-exception   transactions are
+                          cases.                  incorrectly flagged.
+
+  Evidence coverage       Recommendations with    Shows whether a
+                          traceable supporting    reviewer can verify the
+                          sources ÷ all           reasoning.
+                          recommendations.        
+
+  Useful next-check rate  Cases where the next    Tests whether adaptive
+                          selected check adds     investigation is
+                          relevant evidence ÷     useful.
+                          cases with a next-check 
+                          decision.               
+
+  Verified resolution     Cases whose approved    Shows whether the
+  rate                    action passes read-back system actually
+                          verification ÷ cases    completed the intended
+                          where an action was     work.
+                          attempted.              
+
+  Unsafe and duplicate    Count of unauthorized   Both should remain at
+  writes                  writes and duplicate    zero in the evaluation
+                          writes in the test      suite.
+                          suite.                  
+
+  Human investigation     Median and p90 minutes  Shows whether the
+  time                    spent investigating     system reduces manual
+                          comparable cases,       effort.
+                          measured for baseline   
+                          and system-assisted     
+                          workflows.              
+
+  Latency and cost        p50/p95 case duration   Helps us understand
+                          and model/tool cost per operational performance
+                          case.                   and whether the
+                                                  workflow is affordable.
+  -----------------------------------------------------------------------
+
+Proposed acceptance criteria
+
+  -----------------------------------------------------------------------
+  Measure                 Initial target          How we will interpret
+                                                  it
+  ----------------------- ----------------------- -----------------------
+  Unauthorized financial  0 in the evaluation     A safety requirement,
+  writes                  suite                   not a metric to trade
+                                                  off against speed.
+
+  Duplicate writes        0 in timeout, retry and Any duplicate means we
+                          duplicate-event tests   need to fix the action
+                                                  and retry controls.
+
+  Evidence-linked         At least 95% in the     We will manually
+  recommendations         labeled evaluation set  inspect the remaining
+                                                  cases and report the
+                                                  denominator.
+
+  Post-action             Every consequential     A successful API
+  verification            write is read back; the response alone does not
+                          case closes only if     count as verified
+                          required fields match.  resolution.
+
+  Investigation time      Target at least 20%     We will treat this as a
+                          lower median            target to test, not a
+                          investigation time than result we already
+                          the fixed-sequence      achieved.
+                          baseline, without a     
+                          material drop in        
+                          precision or recall.    
+  -----------------------------------------------------------------------
+
+10. Technical feasibility and integration risks
+
+  -------------------------------------------------------------------------
+  Area                    Current feasibility view  What we will check
+  ----------------------- ------------------------- -----------------------
+  Gmail                   Technically feasible      OAuth consent, scopes,
+                          through authorized API    rate limits, data
+                          access.                   retention and customer
+                                                    policy.
+
+  WhatsApp                A Baileys bridge may      Current platform terms,
+                          provide access to         session stability,
+                          WhatsApp Web sessions,    account risk and
+                          but it is unofficial and  whether an official
+                          may be less predictable   integration better fits
+                          than the official         the customer.
+                          Business Platform.        
+
+  ERP/accounting          Feasible where the        API permissions, rate
+                          customer’s product        limits, field mapping
+                          exposes suitable APIs or  and write restrictions.
+                          controlled exports.       
+
+  Delivery evidence       Can come from a logistics How quantities,
+                          API, internal operations  timestamps and delivery
+                          system or controlled      references are recorded
+                          document import.          in the target segment.
+
+  Model interpretation    AI can help interpret     We will test
+                          unstructured messages and hallucinated links,
+                          explain ambiguous links.  conflicting evidence,
+                                                    malformed outputs and
+                                                    prompt injection.
+
+  Customer adoption       The workflow fits an      We will validate actual
+                          exception-investigation   case volume, current
+                          process rather than       investigation time and
+                          replacing the accounting  willingness to approve
+                          system.                   AI-proposed actions.
+  -------------------------------------------------------------------------
+
+11. Reliability, privacy and operational controls
+
+Fault tolerance
+
+-   Our workflow stores checkpoints after meaningful stages, so an
+    interrupted case can resume without repeating completed work.
+
+-   We use bounded retries with backoff for temporary errors. A circuit
+    breaker pauses calls to an unhealthy provider so repeated failures
+    do not overload it.
+
+-   We give each consequential write an idempotency key and check the
+    target system before retrying after a timeout. This reduces the risk
+    of duplicate invoices or updates.
+
+-   If a required connector is unavailable, our system marks the
+    evidence as incomplete and pauses or escalates the case instead of
+    guessing.
+
+-   We invalidate an approval if the action payload or material evidence
+    changes before execution.
+
+-   We record the failure reason and keep the case open until the next
+    step is safe or a person resolves it.
+
+Privacy and security
+
+-   Our connectors request only the permissions needed for the selected
+    workflow, and we prefer read-only access until a write permission is
+    necessary.
+
+-   Our data layer checks tenant access on every query, file reference
+    and tool call.
+
+-   We encrypt data in transit and at rest, and keep OAuth tokens and
+    API credentials in a secret manager rather than prompts or source
+    control.
+
+-   We store only the message excerpts and fields needed for a case,
+    with defined retention and deletion rules.
+
+-   Our operational logs redact personal contact details, bank
+    information and sensitive message content where possible.
+
+-   Our system treats every email, chat message and document as
+    untrusted input. Instructions found inside customer content cannot
+    grant tool permissions or override policy.
+
+-   We record who authorized each integration and support revoking that
+    access.
+
+Human approval and guardrails
+
+  -----------------------------------------------------------------------
+  Action class            Examples                How our system handles
+                                                  it
+  ----------------------- ----------------------- -----------------------
+  Read-only investigation Search messages,        Runs within the
+                          retrieve delivery       authorized scope and
+                          records, compare        budget; every tool call
+                          references and          is logged.
+                          calculate totals.       
+
+  Consequential action    Create or change an     Requires a person to
+                          invoice, issue a credit approve the exact
+                          note, update an         action and evidence. If
+                          accounting record or    the evidence changes,
+                          send a sensitive        the approval expires.
+                          payment reminder.       
+
+  Blocked or escalated    Conflicting records,    Our system does not
+  action                  missing required        execute the action; it
+                          evidence, revoked       records why and routes
+                          permission or a policy  the case for human
+                          violation.              review.
+  -----------------------------------------------------------------------
+
+Scalability and observability
+
+-   We start with a modular application and background workers. We will
+    split modules into separate services only when measured load or
+    reliability needs justify the added operational cost.
+
+-   We use a queue for long investigations and scheduled sync.
+    Backpressure limits incoming work when a connector is slow, helping
+    the system recover without building an unbounded backlog.
+
+-   We index cases by tenant, status, customer/order reference and
+    timestamp. Large documents stay in object storage, while the
+    database keeps their references and case metadata.
+
+-   We trace each case with a correlation ID across connector calls, AI
+    calls, deterministic checks, approvals and writes. This helps us
+    find where a slow or failed case got stuck.
+
+-   We monitor p50/p95 duration, connector errors, retries, model cost,
+    verification failures, escalations and blocked actions. These
+    measurements will guide later scaling decisions.
+
+-   We maintain an access-controlled, append-only audit trail for
+    approvals and financial actions, with a defined retention period.
+
+12. Expected impact and business value
+
+RevenueGuard AI is intended to reduce the time staff spend investigating
+transaction exceptions, improve billing decisions and prevent avoidable
+duplicate or incorrect actions. It may shorten the time between delivery
+and a valid invoice, but we will measure that effect rather than assume
+it.
+
+Illustrative time-value calculation
+
+  -----------------------------------------------------------------------
+  Assumption                          Illustrative value
+  ----------------------------------- -----------------------------------
+  Cases handled each month            200
+
+  Staff time saved per case           12 minutes
+
+  Staff time saved each month         40 hours
+
+  Assumed staff cost                  ₹300 per hour
+
+  Illustrative staff-time value       ₹12,000 per month
+  -----------------------------------------------------------------------
+
+This is a calculation using assumed inputs, not a measured return on
+investment. We will replace the assumptions with observed case volume,
+time saved and actual staff cost. Invoice face value is not the same as
+recovered revenue.
+
+References
+
+-   SIDBI, MSME Outlook Survey Round 2:
+    https://www.sidbi.in/uploads/MSME_Outlook_Survey_Round2_Final.pdf
+
+-   The Economic Times, Recordent survey reporting:
+    https://economictimes.indiatimes.com/small-biz/sme-sector/52-of-msme-b2b-payments-overdue-for-90-days-in-major-indian-cities-recordent-survey/articleshow/112671286.cms
+
+-   TallyPrime, bank reconciliation:
+    https://help.tallysolutions.com/bank-reconciliation-tally/
+
+-   Tally banking features:
+    https://tallysolutions.com/global/features/banking/
+
+-   Zoho Books features:
+    https://www.zoho.com/in/books/accounting-software-features/
+
+-   HighRadius accounts receivable software:
+    https://www.highradius.com/product/accounts-receivable-software/
+
+-   UiPath agentic automation:
+    https://www.uipath.com/automation/agentic-automation/
+
+-   WhiskeySockets/Baileys repository:
+    https://github.com/WhiskeySockets/Baileys
+
+-   Reddit: late-paying clients:
+    https://www.reddit.com/r/smallbusiness/comments/1s22yzq/how_do_you_actually_handle_clients_who_pay/
+
+-   Reddit: overdue invoices from an important client:
+    https://www.reddit.com/r/smallbusiness/comments/1j3e470/how_to_get_a_very_financially_important_client_to/
+
+AI Usage Disclosure
+
+I used AI tools to help structure and write this proposal, improve
+clarity and wording, refine the problem scenarios and technical
+explanations, and create the visual representation of the three
+scenarios and architecture. I reviewed and edited the content before
+finalizing the document.

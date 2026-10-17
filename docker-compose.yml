@@ -1,0 +1,275 @@
+# RevenueGuard AI — full stack.
+#   cp .env.example .env      # optional: works with zero keys (DEMO_MODE / mocks default to true)
+#   docker compose up --build
+# Web: http://localhost:3000   API: http://localhost:8000   MinIO console: http://localhost:9001
+# GPU for Laya: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+# Requires Docker Compose v2.24+ (env_file "required: false").
+
+name: revenueguard
+
+x-env-file: &env-file
+  env_file:
+    - path: .env
+      required: false
+
+x-api-env: &api-env
+  DEMO_MODE: ${DEMO_MODE:-true}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rg}:${POSTGRES_PASSWORD:-rg}@postgres:5432/${POSTGRES_DB:-revenueguard}
+  REDIS_URL: redis://redis:6379/0
+  INLINE_WORKER: "false"
+  JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret}
+  INTERNAL_HMAC_SECRET: ${INTERNAL_HMAC_SECRET:-change-me-internal-hmac}
+  FERNET_KEY: ${FERNET_KEY:-}
+  PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+  WEB_URL: ${WEB_URL:-http://localhost:3000}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  INTERNAL_API_URL: http://api:8000
+  LAYA_URL: http://laya:8100
+  HARNESS_URL: http://harness:3100
+  WA_BRIDGE_URL: http://wa-bridge:3001
+  STORAGE_BACKEND: s3
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-revenueguard}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+  EVAL_RESULTS_PATH: /app/eval/results/latest.json
+  LOG_LEVEL: ${API_LOG_LEVEL:-INFO}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rg}
+      POSTGRES_DB: ${POSTGRES_DB:-revenueguard}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-revenueguard}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set rg http://minio:9000 "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"
+        mc mb --ignore-existing "rg/$$MINIO_BUCKET"
+        echo "bucket $$MINIO_BUCKET ready"
+    restart: "no"
+
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    image: revenueguard/api:local
+    restart: unless-stopped
+    <<: *env-file
+    environment:
+      <<: *api-env
+    volumes:
+      - ./eval:/app/eval
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      laya:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  worker:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    image: revenueguard/api:local
+    command: ["arq", "app.worker.WorkerSettings"]
+    restart: unless-stopped   # chaos kill_worker exits the process; docker brings it back
+    <<: *env-file
+    environment:
+      <<: *api-env
+    volumes:
+      - ./eval:/app/eval
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy   # migrations have run
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "arq", "--check", "app.worker.WorkerSettings"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  laya:
+    build:
+      context: ./services/laya
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/cpu}
+    image: revenueguard/laya:local
+    restart: unless-stopped
+    <<: *env-file
+    environment:
+      HF_HOME: /models
+      LAYA_DEVICE: ${LAYA_DEVICE:-}
+      LAYA_MODEL: ${LAYA_MODEL:-}
+      LAYA_DISABLE: ${LAYA_DISABLE:-0}
+      LAYA_PRELOAD: ${LAYA_PRELOAD:-1}
+      LAYA_MAX_LOADED: ${LAYA_MAX_LOADED:-2}
+      LAYA_WARM_MODELS: ${LAYA_WARM_MODELS:-english,multilingual}
+    volumes:
+      - hf_cache:/models
+    ports:
+      - "127.0.0.1:8100:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=4).status==200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  wa-bridge:
+    build:
+      context: ./services/wa-bridge
+      dockerfile: Dockerfile
+    image: revenueguard/wa-bridge:local
+    restart: unless-stopped
+    <<: *env-file
+    environment:
+      PORT: "3001"
+      API_URL: http://api:8000
+      INTERNAL_HMAC_SECRET: ${INTERNAL_HMAC_SECRET:-change-me-internal-hmac}
+      WA_MOCK: ${WA_MOCK:-true}
+      WA_DATA_DIR: /data
+      LOG_LEVEL: ${NODE_LOG_LEVEL:-info}
+    volumes:
+      - wa_auth:/data
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/health"]
+      interval: 20s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  harness:
+    build:
+      context: ./services/harness
+      dockerfile: Dockerfile
+    image: revenueguard/harness:local
+    restart: unless-stopped
+    <<: *env-file
+    environment:
+      PORT: "3100"
+      API_URL: http://api:8000
+      INTERNAL_HMAC_SECRET: ${INTERNAL_HMAC_SECRET:-change-me-internal-hmac}
+      MOCK_LLM: ${MOCK_LLM:-true}
+      HARNESS_ENGINE: ${HARNESS_ENGINE:-dsh}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      OLLAMA_DISABLED: ${OLLAMA_DISABLED:-true}
+      LOG_LEVEL: ${NODE_LOG_LEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:3100:3100"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3100/health"]
+      interval: 20s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
+        NEXT_PUBLIC_MOCK: ${NEXT_PUBLIC_MOCK:-false}
+    image: revenueguard/web:local
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 5
+
+volumes:
+  pgdata:
+  miniodata:
+  wa_auth:
+  hf_cache:

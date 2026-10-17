@@ -1,0 +1,116 @@
+@import '@fontsource-variable/fraunces';
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/noto-sans-telugu/400.css';
+@import '@fontsource/noto-sans-telugu/600.css';
+@import '@fontsource/noto-sans-devanagari/400.css';
+@import '@fontsource/noto-sans-devanagari/600.css';
+@import '@xyflow/react/dist/style.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Khata-book palette: paper page, card surfaces, ink text, status colours only for money state. */
+:root {
+  color-scheme: light;
+  --paper: #f5f2ea; --card: #fffefa; --ink: #1a1a17; --ink2: #55534c; --ink3: #8a877d;
+  --rule: #e3ded1; --rule2: #cfc8b6;
+  --green: #1e5a3c; --green-bg: #e4eee6; --red: #b23a26; --red-bg: #f6e3dd; --amber: #9a6a12; --amber-bg: #f4ebd6;
+}
+
+html, body { background: var(--paper); color: var(--ink); }
+body {
+  font-family: 'IBM Plex Sans', 'Noto Sans Telugu', 'Noto Sans Devanagari', system-ui, sans-serif;
+  font-size: 14px; line-height: 1.45;
+  font-feature-settings: 'tnum' 1;
+  -webkit-font-smoothing: antialiased;
+}
+html[lang='te'] body { font-family: 'Noto Sans Telugu', 'IBM Plex Sans', system-ui, sans-serif; }
+html[lang='hi'] body { font-family: 'Noto Sans Devanagari', 'IBM Plex Sans', system-ui, sans-serif; }
+
+::selection { background: #ffe9a8; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; }
+* { scrollbar-width: thin; scrollbar-color: var(--rule2) transparent; }
+
+@layer components {
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: 'JetBrains Mono Variable', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .serif { font-family: 'Fraunces Variable', Georgia, serif; font-optical-sizing: auto; font-variant-numeric: lining-nums tabular-nums; }
+  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.12em] text-ink-3; }
+  .h1 { @apply text-[22px] font-semibold leading-tight tracking-[-0.015em] text-ink sm:text-[24px]; }
+  .sub { @apply mt-0.5 text-[14px] text-ink-2; }
+  .sect { @apply mb-2.5 mt-7 flex items-baseline justify-between gap-3; }
+  .sect h2 { @apply text-[15px] font-semibold text-ink; }
+  .more { @apply text-[13px] text-ink-2 hover:text-ink; }
+  .muted { @apply text-ink-3; }
+
+  .card { @apply rounded-md border border-rule bg-card; }
+  .tag { @apply inline-block whitespace-nowrap rounded-sm px-[7px] py-[2px] text-[11.5px] font-medium; }
+  .t-red { @apply bg-red-bg text-red; }
+  .t-amber { @apply bg-amber-bg text-amber; }
+  .t-green { @apply bg-green-bg text-green; }
+  .t-grey { @apply bg-paper-2 text-ink-2; }
+
+  .tbl { @apply w-full border-collapse text-[13.5px]; }
+  .tbl th { @apply border-b border-rule-2 px-3.5 py-2.5 text-left text-[12px] font-medium text-ink-3; }
+  .tbl td { @apply border-b border-rule px-3.5 py-3 align-middle; }
+  .tbl tr:last-child td { @apply border-b-0; }
+  .tbl .r { @apply text-right; }
+
+  /* buttons: ink / green / ghost */
+  .btn { @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded border border-ink bg-ink px-3 py-[7px] text-[13px] font-medium text-paper transition-transform duration-150 active:scale-[.96] disabled:cursor-not-allowed disabled:opacity-40; }
+  .btn-green { @apply btn border-green bg-green text-white; }
+  .btn-ghost { @apply btn border-rule-2 bg-transparent text-ink hover:border-ink-3; }
+  .btn-sm { @apply px-2.5 py-1 text-[12.5px]; }
+  .btn-primary { @apply btn; }
+  .btn-paper { @apply btn-ghost; }
+  .btn-ok { @apply btn-green; }
+
+  .input { @apply w-full rounded border border-rule-2 bg-card px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:border-ink focus:outline-none; }
+  .input-paper { @apply input py-1.5 text-[13px]; }
+  .select { @apply input appearance-none bg-card pr-8; }
+
+  .chip { @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border border-rule-2 bg-paper px-[7px] py-[2px] text-[11.5px] text-ink-2; }
+  .pill { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-sm bg-paper-2 px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:text-ink; }
+  .pill-on { @apply bg-ink text-paper hover:text-paper; }
+
+  /* legacy (Advanced screens) */
+  .panel { @apply rounded-md border border-rule bg-card; }
+  .panel-h { @apply flex items-center justify-between gap-3 border-b border-rule px-4 py-2.5; }
+  .panel-t { @apply text-[14.5px] font-semibold text-ink; }
+  .paper { @apply rounded-md border border-rule bg-card text-ink; }
+  .paper-ruled { background-image: repeating-linear-gradient(180deg, transparent 0 27px, rgba(207, 200, 182, 0.35) 27px 28px); }
+  .stamp { @apply inline-flex items-center gap-1 rounded-sm border px-2 py-[1px] text-[10.5px] font-semibold uppercase tracking-[0.12em]; }
+  .tick-row { @apply flex items-start gap-2 border-b border-dashed border-rule py-1.5 last:border-0; }
+
+  .toggle { @apply relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer items-center rounded-full border border-rule-2 bg-paper-2 transition-colors; }
+  .toggle[aria-checked='true'] { @apply border-green bg-green; }
+  .toggle > span { @apply absolute left-[2px] h-[16px] w-[16px] rounded-full bg-card transition-transform; }
+  .toggle[aria-checked='true'] > span { transform: translateX(18px); }
+}
+
+.flash-once { animation: flash 1s ease-out; }
+@keyframes flash { 0% { background-color: #fff3c4; } 100% { background-color: transparent; } }
+.hl-on { background: #ffe9a8; transition: background 0.3s; }
+.strike { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+
+/* React Flow theming (Advanced) */
+.react-flow { --xy-background-color: transparent; }
+.react-flow__attribution { display: none; }
+.react-flow__controls { box-shadow: none !important; }
+.react-flow__controls-button { background: #fffefa !important; border-color: #e3ded1 !important; fill: #55534c !important; color: #55534c !important; }
+.react-flow__handle { opacity: 0; pointer-events: none; }
+.react-flow__edge-textbg { fill: #f5f2ea; }
+.react-flow__edge-text { fill: #55534c; font-family: 'JetBrains Mono Variable', monospace; font-size: 10px; }
+.react-flow__minimap { background: #fffefa !important; border: 1px solid #e3ded1; border-radius: 4px; }
+
+.typing-caret::after { content: '▍'; margin-left: 1px; color: #1a1a17; animation: caret 1s step-end infinite; }
+@keyframes caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

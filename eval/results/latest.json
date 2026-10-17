@@ -1,0 +1,1790 @@
+{
+  "generated_at": "2026-10-15T13:19:01+00:00",
+  "split": "test",
+  "n_cases": 48,
+  "scenarios": [
+    "alternate_reference",
+    "billing_not_due",
+    "conflicting_quantities",
+    "connector_timeout",
+    "duplicate_events",
+    "duplicate_invoice",
+    "genuine_missing_invoice",
+    "invalid_model_output",
+    "partial_delivery",
+    "partial_payment",
+    "revoked_approval",
+    "stale_evidence"
+  ],
+  "approaches": {
+    "rules_only": {
+      "metrics": {
+        "outcome_accuracy": {
+          "value": 0.4167,
+          "numerator": 20,
+          "denominator": 48
+        },
+        "exception_precision": {
+          "value": 0.8182,
+          "numerator": 36,
+          "denominator": 44
+        },
+        "exception_recall": {
+          "value": 0.9,
+          "numerator": 36,
+          "denominator": 40
+        },
+        "false_positive_rate": {
+          "value": 1.0,
+          "numerator": 8,
+          "denominator": 8
+        },
+        "evidence_coverage": {
+          "value": null,
+          "numerator": 0,
+          "denominator": 0
+        },
+        "useful_next_check_rate": {
+          "value": null,
+          "numerator": 0,
+          "denominator": 0
+        },
+        "verified_resolution_rate": {
+          "value": null,
+          "numerator": 0,
+          "denominator": 44,
+          "note": "no read-back verification in this approach"
+        },
+        "unsafe_writes": 20,
+        "duplicate_writes": 4,
+        "tool_calls_per_case": {
+          "median": 3.0,
+          "total": 144
+        },
+        "latency_ms": {
+          "p50": 0,
+          "p95": 0
+        },
+        "model_cost_inr": {
+          "total": 0.0,
+          "note": "deterministic mock providers in eval: 0 by construction"
+        },
+        "human_investigation_time": {
+          "value": null,
+          "note": "not measurable on synthetic cases; tool calls per case reported as an effort proxy"
+        },
+        "per_scenario": {
+          "alternate_reference": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          },
+          "billing_not_due": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          },
+          "conflicting_quantities": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          },
+          "connector_timeout": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          },
+          "duplicate_events": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "duplicate_invoice": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          },
+          "genuine_missing_invoice": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "invalid_model_output": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "partial_delivery": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "partial_payment": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "revoked_approval": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          },
+          "stale_evidence": {
+            "value": 0.0,
+            "numerator": 0,
+            "denominator": 4
+          }
+        }
+      },
+      "failures": [
+        {
+          "case": "EV-007",
+          "scenario": "stale_evidence",
+          "expected": {
+            "is_exception": true,
+            "outcome": "create_invoice",
+            "amount": 112500,
+            "writes": 1
+          },
+          "got": {
+            "outcome": "create_invoice",
+            "amount": 100000.0,
+            "writes": 1,
+            "final_state": "AUTO",
+            "escalation_reason": null
+          }
+        },
+        {
+          "case": "EV-011",
+          "scenario": "revoked_approval",
+          "expected": {
+            "is_exception": true,
+            "outcome": "escalate",
+            "amount": 0,
+            "writes": 0
+          },
+          "got": {
+            "outcome": "create_invoice",
+            "amount": 100000.0,
+            "writes": 1,
+            "final_state": "AUTO",
+            "escalation_reason": null
+          }
+        },
+        {
+          "case": "EV-019",
+          "scenario": "stale_evidence",
+          "expected": {
+            "is_exception": true,
+            "outcome": "create_invoice",
+            "amount": 62500,
+            "writes": 1
+          },
+          "got": {
+            "outcome": "create_invoice",
+            "amount": 50000.0,
+            "writes": 1,
+            "final_state": "AUTO",
+            "escalation_reason": null
+          }
+        },
+        {
+          "case": "EV-021",
+          "scenario": "connector_timeout",
+          "expected": {
+            "is_exception": true,
+            "outcome": "create_invoice",
+            "amount": 50000,
+            "writes": 1
+          },
+          "got": {
+            "outcome": "create_invoice",
+            "amount": 50000.0,
+            "writes": 2,
+            "final_state": "AUTO",
+            "escalation_reason": null
+          }
+        },
+        {
+          "case": "EV-030",
+          "scenario": "conflicting_quantities",
+          "expected": {
+            "is_exception": true,
+            "outcome": "escalate",
+            "amount": 0,
+            "writes": 0
+          },
+          "got": {
+            "outcome": "create_invoice",
+            "amount": 48000.0,
+            "writes": 1,
+            "final_state": "AUTO",
+            "escalation_reason": null
+          }
+        },
+        {
+          "case": "EV-037",
+          "scenario": "alternate_reference",
+          "expected": {
+            "is_exception": false,
+            "outcome": "none",
+            "amount": 0,
+            "writes": 0
+          },
+          "got": {
+            "outcome": "create_invoice",
+            "amount": 20000.0,
+            "writes": 1,
+            "final_state": "AUTO",
+            "escalation_reason": null
+          }
+        }
+      ],
+      "seconds": 0.0,
+      "cases": [
+        {
+          "id": "EV-007",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 100000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-011",
+          "scenario": "revoked_approval",
+          "outcome": "create_invoice",
+          "amount": 100000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-015",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 100000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-019",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-021",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 2,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-022",
+          "scenario": "invalid_model_output",
+          "outcome": "create_invoice",
+          "amount": 100000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-030",
+          "scenario": "conflicting_quantities",
+          "outcome": "create_invoice",
+          "amount": 48000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-037",
+          "scenario": "alternate_reference",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-041",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 11250.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-043",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 25000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-044",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 80000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-052",
+          "scenario": "duplicate_invoice",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-054",
+          "scenario": "conflicting_quantities",
+          "outcome": "create_invoice",
+          "amount": 112500.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-061",
+          "scenario": "alternate_reference",
+          "outcome": "create_invoice",
+          "amount": 40000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-062",
+          "scenario": "billing_not_due",
+          "outcome": "create_invoice",
+          "amount": 96000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-063",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 12000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-066",
+          "scenario": "conflicting_quantities",
+          "outcome": "create_invoice",
+          "amount": 104000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-068",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-071",
+          "scenario": "revoked_approval",
+          "outcome": "create_invoice",
+          "amount": 16000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-077",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 32000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-078",
+          "scenario": "conflicting_quantities",
+          "outcome": "create_invoice",
+          "amount": 25000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-080",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-081",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 125000.0,
+          "writes": 2,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-083",
+          "scenario": "revoked_approval",
+          "outcome": "create_invoice",
+          "amount": 187500.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-084",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-085",
+          "scenario": "alternate_reference",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-087",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 16000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-089",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 40000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-093",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 2,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-097",
+          "scenario": "alternate_reference",
+          "outcome": "create_invoice",
+          "amount": 60000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-098",
+          "scenario": "billing_not_due",
+          "outcome": "create_invoice",
+          "amount": 80000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-100",
+          "scenario": "duplicate_invoice",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-106",
+          "scenario": "invalid_model_output",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-107",
+          "scenario": "revoked_approval",
+          "outcome": "create_invoice",
+          "amount": 10000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-108",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-110",
+          "scenario": "billing_not_due",
+          "outcome": "create_invoice",
+          "amount": 48000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-120",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 5000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-122",
+          "scenario": "billing_not_due",
+          "outcome": "create_invoice",
+          "amount": 75000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-124",
+          "scenario": "duplicate_invoice",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-130",
+          "scenario": "invalid_model_output",
+          "outcome": "create_invoice",
+          "amount": 12500.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-132",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-136",
+          "scenario": "duplicate_invoice",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-139",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 80000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-140",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-141",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 96000.0,
+          "writes": 2,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-142",
+          "scenario": "invalid_model_output",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-147",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 5000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        },
+        {
+          "id": "EV-149",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 6000.0,
+          "writes": 1,
+          "final_state": "AUTO",
+          "tool_calls": 3
+        }
+      ]
+    },
+    "fixed_sequence": {
+      "metrics": {
+        "outcome_accuracy": {
+          "value": 1.0,
+          "numerator": 48,
+          "denominator": 48
+        },
+        "exception_precision": {
+          "value": 1.0,
+          "numerator": 40,
+          "denominator": 40
+        },
+        "exception_recall": {
+          "value": 1.0,
+          "numerator": 40,
+          "denominator": 40
+        },
+        "false_positive_rate": {
+          "value": 0.0,
+          "numerator": 0,
+          "denominator": 8
+        },
+        "evidence_coverage": {
+          "value": 1.0,
+          "numerator": 28,
+          "denominator": 28
+        },
+        "useful_next_check_rate": {
+          "value": 0.0,
+          "numerator": 0,
+          "denominator": 36
+        },
+        "verified_resolution_rate": {
+          "value": 1.0,
+          "numerator": 24,
+          "denominator": 24
+        },
+        "unsafe_writes": 0,
+        "duplicate_writes": 0,
+        "tool_calls_per_case": {
+          "median": 21.0,
+          "total": 856
+        },
+        "latency_ms": {
+          "p50": 308,
+          "p95": 471
+        },
+        "model_cost_inr": {
+          "total": 0,
+          "note": "deterministic mock providers in eval: 0 by construction"
+        },
+        "human_investigation_time": {
+          "value": null,
+          "note": "not measurable on synthetic cases; tool calls per case reported as an effort proxy"
+        },
+        "per_scenario": {
+          "alternate_reference": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "billing_not_due": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "conflicting_quantities": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "connector_timeout": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "duplicate_events": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "duplicate_invoice": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "genuine_missing_invoice": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "invalid_model_output": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "partial_delivery": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "partial_payment": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "revoked_approval": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "stale_evidence": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          }
+        }
+      },
+      "failures": [],
+      "seconds": 14.6,
+      "cases": [
+        {
+          "id": "EV-007",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 112500.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 32
+        },
+        {
+          "id": "EV-011",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-015",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 100000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-019",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 62500.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 32
+        },
+        {
+          "id": "EV-021",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-022",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-030",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-037",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-041",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 11250.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-043",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 32
+        },
+        {
+          "id": "EV-044",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 80000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-052",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-054",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-061",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-062",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-063",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 12000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-066",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-068",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-071",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-077",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 32000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-078",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-080",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-081",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 125000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-083",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-084",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-085",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-087",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 16000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-089",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 40000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-093",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-097",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 18
+        },
+        {
+          "id": "EV-098",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-100",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-106",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-107",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-108",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-110",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-120",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 5000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-122",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-124",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-130",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-132",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-136",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-139",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 96000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 32
+        },
+        {
+          "id": "EV-140",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-141",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 96000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-142",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-147",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 5000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        },
+        {
+          "id": "EV-149",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 6000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 21
+        }
+      ]
+    },
+    "adaptive": {
+      "metrics": {
+        "outcome_accuracy": {
+          "value": 1.0,
+          "numerator": 48,
+          "denominator": 48
+        },
+        "exception_precision": {
+          "value": 1.0,
+          "numerator": 40,
+          "denominator": 40
+        },
+        "exception_recall": {
+          "value": 1.0,
+          "numerator": 40,
+          "denominator": 40
+        },
+        "false_positive_rate": {
+          "value": 0.0,
+          "numerator": 0,
+          "denominator": 8
+        },
+        "evidence_coverage": {
+          "value": 1.0,
+          "numerator": 28,
+          "denominator": 28
+        },
+        "useful_next_check_rate": {
+          "value": 0.8889,
+          "numerator": 32,
+          "denominator": 36
+        },
+        "verified_resolution_rate": {
+          "value": 1.0,
+          "numerator": 24,
+          "denominator": 24
+        },
+        "unsafe_writes": 0,
+        "duplicate_writes": 0,
+        "tool_calls_per_case": {
+          "median": 16.5,
+          "total": 672
+        },
+        "latency_ms": {
+          "p50": 288,
+          "p95": 438
+        },
+        "model_cost_inr": {
+          "total": 0,
+          "note": "deterministic mock providers in eval: 0 by construction"
+        },
+        "human_investigation_time": {
+          "value": null,
+          "note": "not measurable on synthetic cases; tool calls per case reported as an effort proxy"
+        },
+        "per_scenario": {
+          "alternate_reference": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "billing_not_due": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "conflicting_quantities": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "connector_timeout": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "duplicate_events": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "duplicate_invoice": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "genuine_missing_invoice": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "invalid_model_output": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "partial_delivery": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "partial_payment": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "revoked_approval": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          },
+          "stale_evidence": {
+            "value": 1.0,
+            "numerator": 4,
+            "denominator": 4
+          }
+        }
+      },
+      "failures": [],
+      "seconds": 12.3,
+      "cases": [
+        {
+          "id": "EV-007",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 112500.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 24
+        },
+        {
+          "id": "EV-011",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-015",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 100000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-019",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 62500.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 24
+        },
+        {
+          "id": "EV-021",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-022",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-030",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 12
+        },
+        {
+          "id": "EV-037",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 11
+        },
+        {
+          "id": "EV-041",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 11250.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 16
+        },
+        {
+          "id": "EV-043",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 24
+        },
+        {
+          "id": "EV-044",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 80000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-052",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-054",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 12
+        },
+        {
+          "id": "EV-061",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 11
+        },
+        {
+          "id": "EV-062",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-063",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 12000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-066",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 12
+        },
+        {
+          "id": "EV-068",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-071",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-077",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 32000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 16
+        },
+        {
+          "id": "EV-078",
+          "scenario": "conflicting_quantities",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 12
+        },
+        {
+          "id": "EV-080",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-081",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 125000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-083",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-084",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 50000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-085",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 11
+        },
+        {
+          "id": "EV-087",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 16000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-089",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 40000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 16
+        },
+        {
+          "id": "EV-093",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-097",
+          "scenario": "alternate_reference",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "CLOSED",
+          "tool_calls": 11
+        },
+        {
+          "id": "EV-098",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-100",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-106",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-107",
+          "scenario": "revoked_approval",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-108",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-110",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-120",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 5000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-122",
+          "scenario": "billing_not_due",
+          "outcome": "none",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "WATCHING",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-124",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-130",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-132",
+          "scenario": "genuine_missing_invoice",
+          "outcome": "create_invoice",
+          "amount": 200000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-136",
+          "scenario": "duplicate_invoice",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 10
+        },
+        {
+          "id": "EV-139",
+          "scenario": "stale_evidence",
+          "outcome": "create_invoice",
+          "amount": 96000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 24
+        },
+        {
+          "id": "EV-140",
+          "scenario": "duplicate_events",
+          "outcome": "create_invoice",
+          "amount": 20000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-141",
+          "scenario": "connector_timeout",
+          "outcome": "create_invoice",
+          "amount": 96000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-142",
+          "scenario": "invalid_model_output",
+          "outcome": "escalate",
+          "amount": 0,
+          "writes": 0,
+          "final_state": "ESCALATED",
+          "tool_calls": 0
+        },
+        {
+          "id": "EV-147",
+          "scenario": "partial_delivery",
+          "outcome": "create_invoice",
+          "amount": 5000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 17
+        },
+        {
+          "id": "EV-149",
+          "scenario": "partial_payment",
+          "outcome": "send_reminder",
+          "amount": 6000.0,
+          "writes": 1,
+          "final_state": "CLOSED",
+          "tool_calls": 16
+        }
+      ]
+    }
+  }
+}

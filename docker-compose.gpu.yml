@@ -1,0 +1,18 @@
+# GPU override for the Laya service (NVIDIA Container Toolkit required on the host).
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+services:
+  laya:
+    build:
+      args:
+        TORCH_INDEX: ${TORCH_INDEX_CUDA:-https://download.pytorch.org/whl/cu121}
+    image: revenueguard/laya:cuda
+    environment:
+      LAYA_DEVICE: ${LAYA_DEVICE_GPU:-cuda}
+      NVIDIA_VISIBLE_DEVICES: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

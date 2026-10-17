@@ -1,0 +1,424 @@
+import fs from 'node:fs/promises'
+import type { Logger } from 'pino'
+import type { Boom } from '@hapi/boom'
+import QRCode from 'qrcode'
+import makeWASocket, {
+  Browsers,
+  DisconnectReason,
+  downloadMediaMessage,
+  fetchLatestBaileysVersion,
+  getContentType,
+  isJidBroadcast,
+  isJidGroup,
+  jidNormalizedUser,
+  normalizeMessageContent,
+  proto,
+  useMultiFileAuthState,
+  WAMessageStubType,
+  type WAMessage,
+  type WAMessageKey,
+  type WAMessageUpdate,
+  type WASocket,
+} from 'baileys'
+import { ConnectionStateMachine, backoffDelay } from '../state-machine.js'
+import type { ChatMeta, ConnState, ConnectorHooks, InboundMessage, Me, WaConnector } from './types.js'
+
+const PROTOCOL_REVOKE = proto.Message.ProtocolMessage.Type.REVOKE
+const PROTOCOL_MESSAGE_EDIT = proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+
+export interface BaileysOptions {
+  authDir: string
+  reconnectBaseMs: number
+  reconnectMaxMs: number
+  maxMediaBytes: number
+  browserName: string
+  baileysLogLevel: string
+}
+
+/**
+ * Real WhatsApp Web session via Baileys (npm `baileys`, v7 line; WhiskeySockets/Baileys).
+ * - multi-file auth state persisted in opts.authDir (mount /data/auth as a volume)
+ * - reconnects with exponential backoff on every close EXCEPT loggedOut (401)
+ * - restartRequired (515, normal right after QR pairing) reconnects immediately
+ */
+export class BaileysConnector implements WaConnector {
+  readonly mode = 'baileys' as const
+  private sock: WASocket | undefined
+  private sm: ConnectionStateMachine
+  private qr: string | undefined
+  private meInfo: Me | undefined
+  private attempt = 0
+  private reconnectTimer: NodeJS.Timeout | undefined
+  private stopped = false
+  private generation = 0
+
+  constructor(
+    private readonly opts: BaileysOptions,
+    private readonly hooks: ConnectorHooks,
+    private readonly log: Logger,
+  ) {
+    this.sm = new ConnectionStateMachine((from, to) => this.log.info({ from, to }, 'wa connection state'))
+  }
+
+  state(): ConnState {
+    return this.sm.state
+  }
+  me(): Me | undefined {
+    return this.meInfo
+  }
+  qrDataUrl(): string | undefined {
+    return this.sm.state === 'qr' ? this.qr : undefined
+  }
+
+  async start(): Promise<void> {
+    this.stopped = false
+    await this.connect()
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true
+    clearTimeout(this.reconnectTimer)
+    this.generation++
+    try {
+      this.sock?.end(undefined)
+    } catch {
+      /* ignore */
+    }
+    this.sock = undefined
+    this.setState('disconnected', { reason: 'stopped' })
+  }
+
+  async relink(): Promise<void> {
+    await this.stop()
+    await fs.rm(this.opts.authDir, { recursive: true, force: true })
+    this.meInfo = undefined
+    await this.start()
+  }
+
+  async sendText(jid: string, text: string): Promise<{ messageId: string }> {
+    if (!this.sock || this.sm.state !== 'open') throw new Error('not_connected')
+    const sent = await this.sock.sendMessage(jid, { text })
+    const id = sent?.key?.id
+    if (!id) throw new Error('send_failed_no_id')
+    return { messageId: id }
+  }
+
+  private setState(to: ConnState, info?: { me?: Me; reason?: string }): void {
+    const before = this.sm.state
+    if (to === 'disconnected' && before === 'disconnected') return
+    if (!this.sm.transition(to)) {
+      this.log.warn({ from: before, to }, 'ignored invalid wa state transition')
+      return
+    }
+    if (to !== 'qr' || before !== 'qr') this.hooks.onState(to, info)
+  }
+
+  private async connect(): Promise<void> {
+    if (this.stopped) return
+    const gen = ++this.generation
+    this.setState('connecting')
+    await fs.mkdir(this.opts.authDir, { recursive: true })
+    const { state, saveCreds } = await useMultiFileAuthState(this.opts.authDir)
+    let version: [number, number, number] | undefined
+    try {
+      const latest = await fetchLatestBaileysVersion()
+      version = latest.version as [number, number, number]
+    } catch {
+      version = undefined // fall back to the version bundled with baileys
+    }
+    const baileysLog = this.log.child({ mod: 'baileys' })
+    baileysLog.level = this.opts.baileysLogLevel
+    const sock = makeWASocket({
+      auth: state,
+      ...(version ? { version } : {}),
+      browser: Browsers.ubuntu(this.opts.browserName),
+      logger: baileysLog as never,
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+    })
+    this.sock = sock
+    sock.ev.on('creds.update', saveCreds)
+
+    sock.ev.on('connection.update', async (update) => {
+      if (gen !== this.generation) return // stale socket
+      const { connection, lastDisconnect, qr } = update
+      if (qr) {
+        try {
+          this.qr = await QRCode.toDataURL(qr, { type: 'image/png', margin: 1, width: 320 })
+          this.setState('qr')
+          this.hooks.onQr(this.qr)
+        } catch (err) {
+          this.log.error({ err }, 'qr render failed')
+        }
+      }
+      if (connection === 'open') {
+        this.attempt = 0
+        this.qr = undefined
+        const u = sock.user
+        this.meInfo = u ? { id: jidNormalizedUser(u.id), name: u.name ?? u.notify ?? undefined } : undefined
+        this.setState('open', { me: this.meInfo })
+        // group subjects for the chat picker (names only)
+        sock
+          .groupFetchAllParticipating()
+          .then((groups) => this.emitChats(Object.values(groups).map((g) => ({ jid: g.id, name: g.subject ?? null, is_group: true }))))
+          .catch((err) => this.log.warn({ err: (err as Error).message }, 'group list fetch failed'))
+      }
+      if (connection === 'close') {
+        const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode
+        this.sock = undefined
+        if (statusCode === DisconnectReason.loggedOut) {
+          this.log.warn('wa session logged out; credentials cleared, waiting for relink')
+          this.qr = undefined
+          this.meInfo = undefined
+          await fs.rm(this.opts.authDir, { recursive: true, force: true }).catch(() => {})
+          this.setState('disconnected', { reason: 'logged_out' })
+          return // never auto-reconnect on loggedOut
+        }
+        if (this.stopped) return
+        const immediate = statusCode === DisconnectReason.restartRequired
+        const delay = immediate ? 0 : backoffDelay(this.attempt++, this.opts.reconnectBaseMs, this.opts.reconnectMaxMs)
+        this.log.info({ statusCode, delay, attempt: this.attempt }, 'wa connection closed; reconnecting')
+        this.setState('connecting', { reason: `closed_${statusCode ?? 'unknown'}` })
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = setTimeout(() => {
+          this.connect().catch((err) => this.log.error({ err }, 'reconnect failed'))
+        }, delay)
+      }
+    })
+
+    // ---- chat picker metadata (names + timestamps only, never bodies) ----
+    sock.ev.on('messaging-history.set', ({ chats, contacts }) => {
+      if (gen !== this.generation) return
+      this.emitChats((chats ?? []).map(chatMeta))
+      this.emitContacts(contacts ?? [])
+    })
+    sock.ev.on('chats.upsert', (chats) => gen === this.generation && this.emitChats(chats.map(chatMeta)))
+    sock.ev.on('chats.update', (chats) => gen === this.generation && this.emitChats(chats.map(chatMeta)))
+    sock.ev.on('contacts.upsert', (contacts) => gen === this.generation && this.emitContacts(contacts))
+    sock.ev.on('contacts.update', (contacts) => gen === this.generation && this.emitContacts(contacts.filter((c): c is typeof c & { id: string } => !!c.id)))
+    sock.ev.on('groups.upsert', (groups) => gen === this.generation && this.emitChats(groups.map((g) => ({ jid: g.id, name: g.subject ?? null, is_group: true }))))
+    sock.ev.on('groups.update', (groups) =>
+      gen === this.generation && this.emitChats(groups.filter((g) => g.id).map((g) => ({ jid: g.id!, name: g.subject ?? null, is_group: true }))),
+    )
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      for (const m of messages) {
+        try {
+          const parsed = await this.parseMessage(sock, m, type === 'notify')
+          if (parsed) this.hooks.onMessage(parsed)
+        } catch (err) {
+          this.log.error({ err, id: m.key?.id }, 'failed to process inbound message')
+        }
+      }
+    })
+
+    // edits (update.message.editedMessage) and deletes for everyone (messageStubType REVOKE)
+    sock.ev.on('messages.update', (updates) => {
+      if (gen !== this.generation) return
+      for (const u of updates) {
+        try {
+          this.handleUpdate(u)
+        } catch (err) {
+          this.log.error({ err, id: u.key?.id }, 'failed to process message update')
+        }
+      }
+    })
+  }
+
+  /**
+   * Who sent it, from the key alone (no content read). Undefined for own / broadcast / malformed keys,
+   * and when the privacy gate drops the chat.
+   */
+  private gate(key: WAMessageKey | null | undefined, pushName: string | null | undefined, ts: number): { chat_id: string; from: string } | undefined {
+    if (!key?.id || !key.remoteJid) return undefined
+    if (key.fromMe) return undefined
+    if (isJidBroadcast(key.remoteJid) || key.remoteJid === 'status@broadcast') return undefined
+    const k = key as typeof key & { remoteJidAlt?: string; participantAlt?: string }
+    const group = !!isJidGroup(key.remoteJid)
+    const fromRaw = group ? (k.participantAlt ?? key.participant ?? key.remoteJid) : (k.remoteJidAlt ?? key.remoteJid)
+    if (this.hooks.admit && !this.hooks.admit({
+      chat_id: key.remoteJid,
+      ...(group ? {} : { chat_alt: jidNormalizedUser(fromRaw) }),
+      is_group: group,
+      push_name: pushName ?? null,
+      ts,
+    })) return undefined
+    return { chat_id: key.remoteJid, from: jidNormalizedUser(fromRaw) }
+  }
+
+  /** messages.update: Baileys re-emits edits / revokes here with key.id = the ORIGINAL message id. */
+  private handleUpdate(u: WAMessageUpdate): void {
+    const upd = u.update ?? {}
+    const edited = upd.message?.editedMessage?.message
+    const revoked = upd.messageStubType === WAMessageStubType.REVOKE
+    if (!edited && !revoked) return // status receipts, reactions, polls...: never gated, never read
+    const ts = tsOf(upd.messageTimestamp)
+    const who = this.gate(u.key, null, ts) // privacy gate BEFORE reading the new text
+    if (!who || !u.key.id) return
+    if (revoked) {
+      this.hooks.onDelete?.({ id: u.key.id, ...who, ts, live: true })
+      return
+    }
+    const text = textOf(edited)
+    if (text) this.hooks.onEdit?.({ id: u.key.id, ...who, from_name: null, ts, text, live: true })
+  }
+
+  private emitChats(chats: ChatMeta[]): void {
+    const list = chats.filter((c) => c.jid && !isJidBroadcast(c.jid) && c.jid !== 'status@broadcast')
+    if (list.length) this.hooks.onChats?.(list)
+  }
+
+  private emitContacts(contacts: { id: string; name?: string; notify?: string; verifiedName?: string; phoneNumber?: string }[]): void {
+    const out: { jid: string; name: string }[] = []
+    for (const c of contacts) {
+      const name = c.name ?? c.notify ?? c.verifiedName
+      if (!name) continue
+      out.push({ jid: c.id, name })
+      if (c.phoneNumber && c.phoneNumber !== c.id) out.push({ jid: c.phoneNumber, name })
+    }
+    if (out.length) this.hooks.onContacts?.(out)
+  }
+
+  private async parseMessage(sock: WASocket, m: WAMessage, live: boolean): Promise<InboundMessage | undefined> {
+    const key = m.key
+    if (!key?.id || !key.remoteJid) return undefined
+    if (key.fromMe) return undefined
+    if (isJidBroadcast(key.remoteJid) || key.remoteJid === 'status@broadcast') return undefined
+    const content = normalizeMessageContent(m.message)
+    if (!content) return undefined
+    const type = getContentType(content)
+    if (!type || type === 'senderKeyDistributionMessage' || type === 'reactionMessage') return undefined
+    const ts = tsOf(m.messageTimestamp)
+
+    if (type === 'protocolMessage') {
+      const pm = content.protocolMessage
+      const kind = pm?.type === PROTOCOL_REVOKE ? 'delete' : pm?.type === PROTOCOL_MESSAGE_EDIT ? 'edit' : null
+      const target = pm?.key?.id
+      if (!kind || !target) return undefined // app-state keys, ephemeral settings, history sync...: ignored
+      // Privacy gate BEFORE reading the edited text.
+      const who = this.gate(key, m.pushName, ts)
+      if (!who) return undefined
+      if (kind === 'delete') {
+        this.hooks.onDelete?.({ id: target, ...who, ts, live })
+      } else {
+        const text = textOf(pm?.editedMessage)
+        const editTs = pm?.timestampMs ? Math.floor(Number(pm.timestampMs.toString()) / 1000) : ts
+        if (text) this.hooks.onEdit?.({ id: target, ...who, from_name: m.pushName ?? null, ts: editTs, text, live })
+      }
+      return undefined
+    }
+
+    // Privacy gate BEFORE reading the body or downloading media: non-allowlisted chats are dropped here.
+    const who = this.gate(key, m.pushName, ts)
+    if (!who) return undefined
+
+    let text: string | undefined
+    let media: InboundMessage['media']
+    let mime: string | undefined
+    let filename: string | undefined
+
+    switch (type) {
+      case 'conversation':
+        text = content.conversation ?? undefined
+        break
+      case 'extendedTextMessage':
+        text = content.extendedTextMessage?.text ?? undefined
+        break
+      case 'imageMessage':
+        text = content.imageMessage?.caption ?? undefined
+        mime = content.imageMessage?.mimetype ?? 'image/jpeg'
+        filename = `${key.id}.${extFor(mime)}`
+        break
+      case 'documentMessage':
+        text = content.documentMessage?.caption ?? undefined
+        mime = content.documentMessage?.mimetype ?? 'application/octet-stream'
+        filename = content.documentMessage?.fileName ?? `${key.id}.${extFor(mime)}`
+        break
+      case 'audioMessage':
+        // WhatsApp voice notes (ptt) are ogg/opus
+        mime = content.audioMessage?.mimetype ?? 'audio/ogg; codecs=opus'
+        filename = `${key.id}.${content.audioMessage?.ptt ? 'ogg' : extFor(mime)}`
+        break
+      default:
+        return undefined // video, stickers, contacts, polls... not needed for evidence
+    }
+
+    const ctx = (content[type] as { contextInfo?: proto.IContextInfo | null } | null | undefined)?.contextInfo ?? undefined
+    let sha256: string | undefined
+    if (mime && filename) {
+      const raw = content.imageMessage?.fileSha256 ?? content.documentMessage?.fileSha256 ?? content.audioMessage?.fileSha256
+      sha256 = b64(raw)
+      const declared = Number(
+        (content.imageMessage?.fileLength ?? content.documentMessage?.fileLength ?? content.audioMessage?.fileLength ?? 0).toString(),
+      )
+      if (declared > this.opts.maxMediaBytes) {
+        media = { mime, filename, data: Buffer.alloc(0), ...(sha256 ? { sha256 } : {}) }
+      } else {
+        const data = await downloadMediaMessage(m, 'buffer', {}, { logger: this.log as never, reuploadRequest: sock.updateMediaMessage })
+        media = { mime, filename, data, ...(sha256 ? { sha256 } : {}) }
+      }
+    }
+    if (!text && !media) return undefined
+    return {
+      id: key.id,
+      chat_id: who.chat_id,
+      from: who.from,
+      from_name: m.pushName ?? null,
+      ts,
+      ...(text ? { text } : {}),
+      ...(media ? { media } : {}),
+      is_forwarded: !!ctx?.isForwarded,
+      ...(ctx?.stanzaId ? { quoted_id: ctx.stanzaId } : {}),
+      live,
+    }
+  }
+}
+
+function tsOf(raw: unknown): number {
+  if (raw == null) return Math.floor(Date.now() / 1000)
+  const n = typeof raw === 'number' ? raw : Number(String(raw))
+  return Number.isFinite(n) && n > 0 ? n : Math.floor(Date.now() / 1000)
+}
+
+/** Text of a (possibly wrapped) message: conversation, extended text, or a media caption. */
+export function textOf(msg: proto.IMessage | null | undefined): string | undefined {
+  const c = normalizeMessageContent(msg)
+  if (!c) return undefined
+  const t =
+    c.conversation ??
+    c.extendedTextMessage?.text ??
+    c.imageMessage?.caption ??
+    c.documentMessage?.caption ??
+    c.videoMessage?.caption ??
+    undefined
+  return t || undefined
+}
+
+function b64(raw: Uint8Array | string | null | undefined): string | undefined {
+  if (!raw) return undefined
+  if (typeof raw === 'string') return raw || undefined // already base64 (JSON-restored message)
+  return raw.length ? Buffer.from(raw).toString('base64') : undefined
+}
+
+function chatMeta(c: { id?: string | null; name?: string | null; conversationTimestamp?: unknown; lastMessageRecvTimestamp?: number }): ChatMeta {
+  if (!c.id) return { jid: '' } // filtered out by emitChats
+  const raw = c.lastMessageRecvTimestamp ?? c.conversationTimestamp
+  const ts = raw == null ? null : Number(String(raw))
+  return { jid: c.id, name: c.name ?? null, is_group: !!isJidGroup(c.id), last_message_at: ts && Number.isFinite(ts) ? ts : null }
+}
+
+function extFor(mime: string): string {
+  const base = mime.split(';')[0]!.trim()
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'application/pdf': 'pdf',
+    'audio/ogg': 'ogg',
+    'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a',
+    'text/csv': 'csv',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  }
+  return map[base] ?? 'bin'
+}

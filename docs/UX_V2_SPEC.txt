@@ -1,0 +1,152 @@
+You are working in the RevenueGuard AI monorepo (the repo root is the current workspace folder).
+
+BEFORE YOU WRITE ANY CODE
+1. Read README.md, docs/CONTRACT.md and docs/DEMO_SCRIPT.md.
+2. Open every image in docs/mockups/ (1-home.png to 21-eval-chaos.png). docs/mockups/RevenueGuard-UX-v2-all-screens.pdf holds the same 21 screens in one file. These mockups are the design target. Match the layout, words, numbers format and colours closely.
+3. Open docs/mockups/live/live.html in a browser and watch docs/mockups/live/RevenueGuard-live-animation.mp4. This is the target for the "live" animation (Phase 2).
+4. Then write an Implementation Plan artifact: list every screen, route, component, API endpoint and test you will add, mapped to the mockup number. Wait for my approval of the plan before coding.
+5. Work ONE PHASE AT A TIME. At the end of each phase, run all checks, show me screenshots next to the matching mockup, and stop for my review.
+
+==================================================
+STACK (do not change it)
+==================================================
+- services/api: FastAPI + SQLAlchemy + Postgres/pgvector + Redis/ARQ worker. Owns the case state machine, deterministic validator, approvals, Action Gateway, Independent Verifier and the audit hash chain.
+- services/harness: Node + DeepSeek Harness (dsh). Agents: triage, evidence, investigation, resolution.
+- services/wa-bridge: Baileys WhatsApp bridge.
+- services/laya: severity + prompt-injection check.
+- apps/web: Next.js 14 App Router + TypeScript + Tailwind. Mock backend in apps/web/src/lib/mock (used when NEXT_PUBLIC_MOCK=true).
+- LLM router: NVIDIA NIM deepseek-ai/deepseek-v4.1-flash > Groq openai/gpt-oss-120b > Ollama qwen3:8b. Speech: Groq whisper-large-v3 > NIM. Do not change these.
+
+==================================================
+GOAL
+==================================================
+Turn RevenueGuard from an engineer's investigation board into a product that a small Indian business owner and their accounts team understand in 5 seconds. Every main screen answers:
+How much money am I losing? Who do I bill today? Who do I chase? What is waiting for me? Is it right, and where is the proof?
+
+==================================================
+HARD RULES (never break these)
+==================================================
+1. Every financial write (Zoho/Tally invoice or voucher) and every customer message goes through the EXISTING approval flow: role check, 2 different approvers above Rs 1,00,000, approval bound to payload hash + evidence_version, auto-expire when evidence changes, idempotency key, read-back verification. New surfaces (WhatsApp replies, bulk approve, phone app, Ask) call the SAME approval endpoints. Never add a second write path.
+2. Agents never get write tools. No LLM can write money or send messages directly.
+3. All incoming content (email, WhatsApp, PDFs, photos, voice) stays untrusted and goes through the Laya injection check.
+4. Money numbers come from the deterministic validator, never from LLM text. Plain-language headlines are built from templates over validator facts.
+5. Keep DEMO_MODE/mock working. Keep existing tests green (api 48, harness 40, wa-bridge 15). Add tests for everything new.
+6. Indian formats everywhere: Rs sign, 4,82,000, lakh/crore, dates like 15 Oct 2026, times in IST.
+7. Plain English on main screens. Words like agent, node, evidence_version, checkpoint and orchestrator appear only under Advanced.
+8. Privacy: wa-bridge must drop messages from chats that are not on the allowlist BEFORE storing them (see Phase 4).
+
+==================================================
+DESIGN SYSTEM ("khata book" style)
+==================================================
+- Colours: paper #F5F2EA (page), card #FFFEFA, ink #1A1A17, ink-2 #55534C, ink-3 #8A877D, rule #E3DED1, rule-2 #CFC8B6.
+- Status colours ONLY for money state: red #B23A26 / bg #F6E3DD (not billed, overdue, risk), amber #9A6A12 / bg #F4EBD6 (partial, needs check, waiting), green #1E5A3C / bg #E4EEE6 (billed, paid, verified, approve buttons). Nothing else is coloured.
+- Fonts: IBM Plex Sans for UI (tabular numerals), Fraunces only for big money figures, JetBrains Mono only for GSTIN and IDs, Noto Sans Telugu and Noto Sans Devanagari for Telugu and Hindi. Use @fontsource.
+- Banned: gradients, glassmorphism, glow, neon, purple, sparkle or robot icons, "AI-powered" badges, emoji in the UI, bubbly rounded-2xl cards, shadows heavier than 1px. Radius 3 to 4px. Thin 1px rules. Dense, real tables.
+- Icons: lucide-react, 15px, stroke 1.8.
+- Reusable components in apps/web/src/components/ui/: Money, MoneyFigure, StatusTag, ProofChip (source icon + label, opens the source), Card, DataTable, Button (ink / green / ghost), StatStrip, Journey, MoneyFlow, LiveFeed, EmptyState, ErrorState, Skeleton.
+- Navigation (left sidebar, as in the mockups): Today, To bill (count), To collect (count), Customers, Approvals (count), Unlinked (count), Ask, Reports. Setup: Connections (x/4), Settings. Advanced: Agent activity, Audit log, Eval & chaos (demo mode only). The top bar has a global search/Ask box (press / to focus), an EN / हिन्दी / తెలుగు switch and the avatar. The sidebar footer shows connection health and last sync time.
+- Every main screen works at 390px. Today, Approvals, To collect and Ask are fully usable on a phone.
+
+==================================================
+SCREEN MAP (mockup number > route > what it must show)
+==================================================
+1  Home / Today summary ........ /            money strip (Delivered not billed, Billed overdue, Recovered this month), "Bill these today" table, "Waiting on you", "Payments to chase"
+7  Today money flow + live ..... /            (same page, lower part) Money Flow bars Ordered > Delivered > Billed > Paid with red leak labels, and the Live feed on the right
+2  Case page ................... /case/[id]   plain headline, recommendation, "Why we think so" proof rows, trust callouts (expired approval, quarantined email), confidence label + reason, GST invoice preview with Approve / Edit / Reject
+8  Case journey ................ /case/[id]   (top of case page) 8-step Journey + Order > Delivery > Invoice > Payment document strip
+9  To bill ..................... /bill        filterable list, checkboxes, BULK APPROVE (each row still gets its own approval record), not-billable reasons
+10 To collect .................. /collect     overdue list, days late, reminder ladder 7/15/30 days, UPI pay link, reminder drafts waiting approval, snooze
+3  Approvals (mobile) .......... /approvals   phone layout: big amount, proof chips, 1 of 2 approvers, Approve / Reject
+11 Approvals (desktop) ......... /approvals   desktop layout of the same data
+4  Customer page ............... /customers/[id]  GSTIN, masked phone, stat strip, orders with ordered/delivered/billed/paid bars, follow-up timeline
+12 Customers list .............. /customers   outstanding, overdue, days to pay vs terms, risk label (Good / Watch / High) with the rule on hover
+13 Unlinked inbox .............. /unlinked    messages and docs we could not match to a PO, suggested matches with confidence, "Link to PO" / "Ignore"; linking teaches an alias
+14 Connections ................. /setup/connections  Gmail, WhatsApp, Sheet, Zoho/Tally with health, last sync, errors in plain words, and the WhatsApp CHAT PICKER (allowlist)
+5  Setup wizard ................ /setup       4 steps with live ticks, smart sheet column mapping, "Try with sample data"
+17 First day ................... /setup/first-day  90-day backfill progress and the guided first case
+15 Settings .................... /settings    team and roles, approver phones, notification control, digest time, billing rules, UPI VPA, GSTIN, language
+16 Reports ..................... /reports     monthly recovered, unbilled ageing, collections, CA export (Excel/CSV + PDF)
+6  Ask ......................... /ask         question box, short answer + table + proof links + action chips
+18 Mobile ...................... PWA          Today, Collect and Ask in Telugu, bottom nav Today / Approve / Collect / Ask
+19 Agent activity .............. /advanced/agents  swimlane per agent, tool calls with time, tokens, cost, provider
+20 Audit log ................... /advanced/audit   append-only hash chain, filter by case, export
+21 Eval & chaos ................ /advanced/eval    eval metrics + chaos buttons (demo mode only). The numbers in the mockup are placeholders: show real numbers from eval/run.py, or "Not run yet".
+
+==================================================
+PHASE 1: DESIGN SYSTEM + CORE SCREENS
+==================================================
+Build the tokens and components, the sidebar and top bar, then screens 1, 2, 3, 11, 9, 10, 4, 12. Move the old forensic screens (evidence graph, agent runs, chaos) under Advanced and restyle them with the new tokens. Keep them working.
+
+==================================================
+PHASE 2: LIVE VISUALS + ANIMATION (match live.html)
+==================================================
+All visuals use real API data and update live over the existing WebSocket /ws (case.updated, checkpoint, agent.event, approval.updated, guardrail). Use GET /events/recent to catch up after reconnect.
+
+1. Case Journey: Received > Read > Matched to PO > Checked > Waiting for you > Invoice created > Verified in Zoho > Paid.
+   - Map backend states (INTAKE, TRIAGED, EVIDENCE_READY, VALIDATED, INVESTIGATING, PROPOSED, AWAITING_APPROVAL, EXECUTING, VERIFYING, CLOSED, plus PAUSED, ESCALATED, BLOCKED) in ONE file, apps/web/src/lib/journey.ts, with unit tests.
+   - Step looks: done = filled ink dot with a tick + time; current = outlined dot with a soft pulse + a live caption; waiting on a human = amber, with who it waits for; problem = red, with reason + next step ("Zoho is down. We'll retry at 9:45 PM. Nothing was billed twice."); not started = dashed.
+   - The ink progress line grows smoothly to the current step.
+2. Money Flow: Ordered > Delivered > Billed > Paid for This month / Last 30 days / Quarter, with red leak labels ("Rs 4,82,000 delivered but not billed"). Clicking a leak opens the filtered list. Plain SVG or recharts. No 3D, no gradients.
+3. Live feed: time-stamped plain lines, newest on top, sliding in from the right ("9:18 PM · Read challan DC-5521: 60 × Model X, PO-184"). Each line has a small uppercase source label (Intake, Reading photo, Voice note, Matching, Checking Zoho, Waiting for you, Invoice, Verified) and links to its case.
+   - Captions come from a deterministic map of event/tool names to sentences (gmail_search: "Looking in Gmail for the PO"; whatsapp_search: "Checking WhatsApp for delivery updates"; search_alt_ids: "Checking if it was billed under another reference"; compute_billable: "Working out the exact amount to bill"). No LLM-written captions.
+4. Animations (copy the timing and feel from live.html):
+   - Money strip figures count up/down over about 900ms with an ease-out and a short pale-yellow flash when they change.
+   - When an invoice is created, a green "+Rs 82,600" chip moves from the Delivered bar to the Billed bar, and the bars resize smoothly.
+   - When a photo is read, its proof row highlights the fields that were extracted (PO, customer, quantity) in pale yellow.
+   - Approve button gives a tap response; an expired approval shows a strike-through amount and the reason.
+   - Use CSS transitions or framer-motion, 250 to 1000ms, ease-out. Respect prefers-reduced-motion (then: no movement, just instant updates).
+5. Demo replay: in demo mode, add a "Replay PO-184 live" button on Today. It plays the real event sequence through the mock backend so the whole page animates exactly like live.html.
+
+==================================================
+PHASE 3: SETUP, CONNECTIONS, FIRST DAY
+==================================================
+1. Setup wizard (5): Gmail OAuth, WhatsApp QR pairing, delivery Sheet, Accounting (Zoho Books or Tally), each with a live tick, plus "Try with sample data", which loads the demo tenant.
+2. Smart sheet mapping: read the header + first 20 rows and propose column > meaning (po_ref, customer, item, qty_ordered, qty_delivered, qty_pending, delivery_date, ignore). Use header synonyms first (extend LiveSheets.KEYMAP), value patterns second, and an LLM only as a last resort. Each mapping is "Sure" or "Please check". The user confirms. Save it in the connector config and use it in read_delivery.
+3. Connections (14): health per connector (OK / slow / down / needs re-login), last sync, error in plain words, Reconnect button.
+4. WhatsApp chat picker (14): after QR pairing, list chats/groups with last message time; the user ticks which to watch. wa-bridge keeps an allowlist and DROPS messages from other chats before storing or sending them to the API. Default = nothing watched. Tests prove that a non-allowed chat is never stored.
+5. First day (17): 90-day backfill job (ARQ) for Gmail, allowed WhatsApp chats, Sheet and Zoho, with progress per source, then a guided first case that walks the user through one real finding.
+
+==================================================
+PHASE 4: WHATSAPP AND NOTIFICATIONS
+==================================================
+1. WhatsApp approvals: when an approval is created, send the approver(s) a summary (customer, PO, what happened, amount + GST = total, proof list) with "Reply 1 to Approve, 2 to Reject, 3 for proof" (buttons only if the account supports them). The reply maps to the existing POST /approvals/{id}/approve|reject with a short-lived signed token tied to approval_id + payload_hash + approver phone. Only phones linked to a finance approver can approve. Expired approval reply: "This approval expired because the evidence changed. Here is the new one." After verification: "Done. Invoice INV-xxxx created in Zoho and checked: Rs X."
+2. "Got it" receipt and "Which PO?" ask-back: when a watched chat sends a delivery photo/voice note, reply "Got it ✓ Added to PO-184 (Example Customer)". If no PO can be matched, ask "Which PO is this for?" and link the answer. Both are internal team messages (not customer messages), logged in audit, and can be turned off in Settings.
+3. Daily digest at 9:00 AM IST (configurable per tenant): what to bill, who to chase, approvals waiting. Opt-in per user, WhatsApp and/or email.
+4. Notification control (15): per user, per type (approvals, digest, receipts, problems), channel and quiet hours.
+
+==================================================
+PHASE 5: MONEY FEATURES
+==================================================
+1. GST invoice preview: seller and buyer GSTIN, state codes, HSN/SAC, CGST+SGST for the same state and IGST for different states, rate from the item master (default 18%), round-off, total in words (Indian system). Flag when e-invoice (IRN) may be needed using a configurable turnover threshold (note only, no IRN API call). The approval payload hash includes the tax lines.
+2. Bulk approve (9): select several rows > one confirm screen with the total > one approval record per invoice, each with its own hash and idempotency key. Two-approver rule still applies per invoice.
+3. Payment chase (10): reminders at 7, 15 and 30 days past due (configurable), polite > firm tone, a upi://pay link (payee VPA from settings, amount, invoice ref). Every reminder needs the customer-message approval. Track sent / delivered / read / replied from WhatsApp receipts. Snooze a customer for N days with a reason.
+4. Not-billable reasons: the user can mark a delivery "Not billable" (sample, replacement, returned, billed in another system) with a reason. It leaves the To bill list and is logged in audit.
+5. "This is wrong" fact correction: on any proof row the user can correct a fact (e.g. qty 60 > 70). This creates a new evidence version, expires open approvals and re-runs the validator.
+6. Alias learning: when the user links an unlinked item or corrects a customer/PO name, save the alias (e.g. "Exmpl Cust" = Example Customer, "184" = PO-184) per tenant and use it in matching.
+7. Tally: TallyAdapter beside Zoho behind the same accounting interface (create sales voucher, find by reference, read back) through Tally Prime XML/HTTP on port 9000 via a small local connector. Approval-gated, idempotent (store the voucher GUID against the idempotency key), read-back verified. Mock adapter for demo mode.
+
+==================================================
+PHASE 6: ASK, CUSTOMERS, REPORTS, ROLES, LANGUAGE, PWA
+==================================================
+1. Ask (6): new read-only harness agent "analyst" with tools query_receivables, query_unbilled, get_case, search_evidence. Every number comes from a tool result and has a proof link. The answer is a short sentence + table + action chips (chips only open existing flows). Refuse write requests politely. Budget and rate-limit it.
+2. Customers (4, 12): GET /customers and /customers/{id} with orders, outstanding, overdue, average days to pay vs terms (last 6 invoices) and a risk label from simple rules shown on hover.
+3. Search + shortcuts: the global box finds customers, POs, invoices and cases. Shortcuts: / search, g t Today, g b To bill, g c To collect, g a Approvals, ? help.
+4. Reports (16): recovered by month, unbilled ageing (0-7, 8-30, 31-60, 60+ days), collections, CA export (Excel/CSV + PDF, date range, GST columns).
+5. Roles (15): owner, accounts, finance approver, viewer. Check them in the API, not only in the UI.
+6. Hindi and Telugu: UI dictionary in apps/web/src/i18n, plus templates for headlines, WhatsApp messages and the digest in all three languages.
+7. PWA (18): manifest, icons, offline shell, installable. Bottom nav Today / Approve / Collect / Ask. Web push for new approvals if available.
+8. Plain-word empty, loading and error states on every screen. Never show raw stack traces.
+
+==================================================
+MOCK DATA (the whole new UI must work with NEXT_PUBLIC_MOCK=true)
+==================================================
+Use the PO-184 / RG-1042 story: PO email 100 × Model X at Rs 1,000; challan photo DC-5521 (60 boxes) from Ravi; Hinglish voice note "60 boxes gaye, baaki next week"; correction 60 > 70 that expires the Rs 60,000 approval; final invoice 70 × Rs 1,000 + 18% GST = Rs 82,600; INV-2231 created and verified; injection email quarantined; PO-185 at Rs 2,00,000 needing two approvers. Add 6 to 8 more customers so the lists and Money Flow look real.
+
+==================================================
+CHECKS AFTER EVERY PHASE
+==================================================
+- Run: api pytest, harness tests, wa-bridge tests, web typecheck + build, and demo scenes 0 to 14 in mock mode. Fix anything that breaks before moving on.
+- Playwright screenshots of every screen built in that phase at 1440px and 390px, shown next to the matching mockup. List any differences and why.
+- Update docs/CONTRACT.md for every new endpoint/event, plus README.md and docs/DEMO_SCRIPT.md.
+
+AT THE END give me: what was built, what is mocked vs real, test results, and anything that needs my keys or decisions (Google OAuth, Zoho, NIM, Groq, WhatsApp number, UPI VPA, GSTIN).
