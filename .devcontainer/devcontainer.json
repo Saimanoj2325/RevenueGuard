@@ -1,9 +1,10 @@
 {
   "name": "RevenueGuard AI",
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-      "moby": false
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "enableNonRootDocker": "true"
     }
   },
   "forwardPorts": [3000, 8000, 9001],
@@ -19,5 +20,5 @@
       "label": "MinIO Console"
     }
   },
-  "postCreateCommand": "cp -n .env.example .env && docker compose up -d --build"
+  "postCreateCommand": "cp -n .env.example .env"
 }
