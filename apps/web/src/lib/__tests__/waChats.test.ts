@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatPhone } from '../format';
-import { chatKind, chatSubtitle, chatTitle, inFilter, matchesSearch, sortChats } from '../waChats';
+import { chatKind, chatSubtitle, chatTitle, inFilter, isFaceless, matchesSearch, sortChats } from '../waChats';
 import type { WaChat } from '../v2types';
 
 const c = (o: Partial<WaChat> & { jid: string }): WaChat => ({ name: null, is_group: false, last_message_at: null, watched: false, ...o });
@@ -15,8 +15,10 @@ describe('chat picker helpers', () => {
   it('never shows a raw JID or masked number as the name', () => {
     expect(chatTitle(c({ jid: '919876543204@s.whatsapp.net', name: '919876543204@s.whatsapp.net' }))).toBe('+91 98765 43204');
     expect(chatTitle(c({ jid: '81234567890123@lid', phone: '919876543204' }))).toBe('+91 98765 43204');
-    expect(chatTitle(c({ jid: '81234567890123@lid' }))).toBe('Unknown contact');
-    expect(chatSubtitle(c({ jid: '81234567890123@lid' }))).toBe('Person · number hidden by WhatsApp');
+    expect(chatTitle(c({ jid: '81234567890123@lid' }))).toBe('Hidden number');
+    expect(chatSubtitle(c({ jid: '81234567890123@lid', push_name: 'Ramu' }))).toBe('Person · WhatsApp has not shared the number yet');
+    expect(isFaceless(c({ jid: '81234567890123@lid' }))).toBe(true);
+    expect(isFaceless(c({ jid: '81234567890123@lid', phone: '919876543204' }))).toBe(false);
     expect(chatSubtitle(c({ jid: '919876543204@s.whatsapp.net', name: 'Ramesh', push_name: 'Ramu' }))).toBe('Person · +91 98765 43204 · ~ Ramu');
     expect(chatSubtitle(c({ jid: '919876543204@s.whatsapp.net' }))).toBe('Person · not in your contacts');
   });

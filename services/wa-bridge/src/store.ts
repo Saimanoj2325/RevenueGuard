@@ -222,6 +222,11 @@ export class Store {
       .run({ jid, name: name || '', push: push || null })
   }
 
+  /** LID 1:1 chats with no known phone number yet. */
+  unresolvedLids(limit = 1000): string[] {
+    return (this.db.prepare(`SELECT c.jid FROM chats c LEFT JOIN lid_map m ON m.lid = c.jid WHERE c.jid LIKE '%@lid' AND m.pn IS NULL LIMIT ?`).all(limit) as { jid: string }[]).map((r) => r.jid)
+  }
+
   /** Remember which phone JID a LID belongs to. */
   linkLid(lid: string, pnJid: string): void {
     if (!lid.endsWith('@lid') || !pnJid.endsWith('@s.whatsapp.net')) return

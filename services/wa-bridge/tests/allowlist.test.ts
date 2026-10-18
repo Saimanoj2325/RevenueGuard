@@ -373,4 +373,14 @@ describe('chat picker: kinds, numbers and names', () => {
     expect(row.name).toBeNull()
     expect(row.phone).toBe('919800000004')
   })
+
+  it('links a LID to its phone number from contacts and lists only LIDs still unresolved', async () => {
+    const env = makeEnv()
+    const h = env.bridge.hooks()
+    h.onChats!([{ jid: '111@lid' }, { jid: '222@lid' }])
+    expect(h.unresolvedLids!().sort()).toEqual(['111@lid', '222@lid'])
+    h.onContacts!([{ jid: '111@lid', phone_jid: '919800000111@s.whatsapp.net' }])
+    expect(h.unresolvedLids!()).toEqual(['222@lid'])
+    expect(env.store.listChats().find((r) => r.jid === '111@lid')!.phone).toBe('919800000111')
+  })
 })

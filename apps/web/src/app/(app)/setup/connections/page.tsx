@@ -12,7 +12,7 @@ import { useLive } from '@/lib/hooks';
 import { useAuth } from '@/lib/store';
 import { useT } from '@/i18n';
 import type { ConnectorV2, WaChat, WaChatKind } from '@/lib/v2types';
-import { FILTERS, chatKind, chatSubtitle, chatTitle, inFilter, matchesSearch, sortChats, type ChatFilter } from '@/lib/waChats';
+import { FILTERS, chatKind, chatSubtitle, chatTitle, inFilter, isFaceless, matchesSearch, sortChats, type ChatFilter } from '@/lib/waChats';
 
 const META: Record<string, { label: string; Icon: any; todo: string }> = {
   google: { label: 'Gmail', Icon: Mail, todo: 'Sign in with Google to read order and payment emails.' },
@@ -86,7 +86,11 @@ export default function ConnectionsPage() {
   const waOn = wa?.status === 'connected';
   useEffect(() => { if (waOn) chats.reload(); }, [waOn]); // eslint-disable-line react-hooks/exhaustive-deps
   // chats left in the bridge from an earlier pairing are not shown (or counted) until WhatsApp is linked again
-  const all = useMemo(() => (waOn ? (chats.data ?? []) : []).filter((c) => chatKind(c) !== 'broadcast' || c.watched), [chats.data, waOn]);
+  const [showHidden, setShowHidden] = useState(false);
+  const linked = useMemo(() => (waOn ? (chats.data ?? []) : []).filter((c) => chatKind(c) !== 'broadcast' || c.watched), [chats.data, waOn]);
+  // 1:1 chats WhatsApp gave no number or name for (privacy IDs it hasn't mapped yet) stay out of the list unless asked for, or already ticked
+  const hiddenCount = useMemo(() => linked.filter((c) => isFaceless(c) && !sel?.has(c.jid)).length, [linked, sel]);
+  const all = useMemo(() => linked.filter((c) => showHidden || !isFaceless(c) || sel?.has(c.jid)), [linked, showHidden, sel]);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, all.filter((c) => inFilter(c, f.key, sel ?? new Set())).length])) as Record<ChatFilter, number>, [all, sel]);
   const rows = useMemo(() => sortChats(all.filter((c) => inFilter(c, kind, pinned) && matchesSearch(c, s)), pinned), [all, kind, s, pinned]);
   const dirty = !!sel && !!chats.data && chats.data.some((c) => c.watched !== sel.has(c.jid));
@@ -151,6 +155,11 @@ export default function ConnectionsPage() {
                   </label>
                 );
               })}
+            {waOn && hiddenCount > 0 && (
+              <button className="w-full border-t border-rule px-4 py-2.5 text-left text-[12.5px] text-ink-3 hover:bg-[#FBF9F3]" onClick={() => setShowHidden((v) => !v)}>
+                {showHidden ? 'Hide' : 'Show'} {hiddenCount} {hiddenCount === 1 ? 'chat' : 'chats'} where WhatsApp has not shared the number yet. They fill in as those people message you.
+              </button>
+            )}
             {wa?.status === 'connected' && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule px-4 py-3">
                 <span className={clsx('text-[12.5px]', msg?.tone === 'red' ? 'text-red' : msg ? 'text-green' : 'text-ink-3')}>{msg?.text ?? (user?.role === 'admin' ? 'Changes apply when you save.' : 'Only the owner can change which chats are watched.')}</span>

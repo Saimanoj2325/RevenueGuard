@@ -52,6 +52,8 @@ export class BaileysConnector implements WaConnector {
   private reconnectTimer: NodeJS.Timeout | undefined
   private stopped = false
   private generation = 0
+  /** LIDs already looked up on this socket (cleared on reconnect) */
+  private lidTried = new Set<string>()
 
   constructor(
     private readonly opts: BaileysOptions,
@@ -158,10 +160,16 @@ export class BaileysConnector implements WaConnector {
         const u = sock.user
         this.meInfo = u ? { id: jidNormalizedUser(u.id), name: u.name ?? u.notify ?? undefined } : undefined
         this.setState('open', { me: this.meInfo })
+        this.lidTried.clear()
+        // chats stored by earlier sessions that still have no phone number
+        setTimeout(() => gen === this.generation && this.resolveLids(this.hooks.unresolvedLids?.() ?? []), 5_000)
         // group subjects for the chat picker (names only)
         sock
           .groupFetchAllParticipating()
-          .then((groups) => this.emitChats(Object.values(groups).map(groupMeta)))
+          .then((groups) => {
+            this.emitChats(Object.values(groups).map(groupMeta))
+            this.emitParticipantLinks(Object.values(groups))
+          })
           .catch((err) => this.log.warn({ err: (err as Error).message }, 'group list fetch failed'))
       }
       if (connection === 'close') {
@@ -188,16 +196,22 @@ export class BaileysConnector implements WaConnector {
     })
 
     // ---- chat picker metadata (names + timestamps only, never bodies) ----
-    sock.ev.on('messaging-history.set', ({ chats, contacts }) => {
+    sock.ev.on('messaging-history.set', ({ chats, contacts, messages }) => {
       if (gen !== this.generation) return
       this.emitChats((chats ?? []).map(chatMeta))
       this.emitContacts(contacts ?? [])
+      // LID -> phone links from message KEYS only (remoteJidAlt / participantAlt); bodies are never touched here
+      this.emitKeyLinks((messages ?? []).map((m) => m.key))
     })
     sock.ev.on('chats.upsert', (chats) => gen === this.generation && this.emitChats(chats.map(chatMeta)))
     sock.ev.on('chats.update', (chats) => gen === this.generation && this.emitChats(chats.map(chatMeta)))
     sock.ev.on('contacts.upsert', (contacts) => gen === this.generation && this.emitContacts(contacts))
     sock.ev.on('contacts.update', (contacts) => gen === this.generation && this.emitContacts(contacts.filter((c): c is typeof c & { id: string } => !!c.id)))
-    sock.ev.on('groups.upsert', (groups) => gen === this.generation && this.emitChats(groups.map(groupMeta)))
+    sock.ev.on('groups.upsert', (groups) => {
+      if (gen !== this.generation) return
+      this.emitChats(groups.map(groupMeta))
+      this.emitParticipantLinks(groups)
+    })
     sock.ev.on('groups.update', (groups) =>
       gen === this.generation && this.emitChats(groups.filter((g): g is typeof g & { id: string } => !!g.id).map(groupMeta)),
     )
@@ -208,6 +222,7 @@ export class BaileysConnector implements WaConnector {
     })
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (gen === this.generation) this.emitKeyLinks(messages.map((m) => m.key))
       for (const m of messages) {
         try {
           const parsed = await this.parseMessage(sock, m, type === 'notify')
@@ -272,7 +287,65 @@ export class BaileysConnector implements WaConnector {
   private emitChats(chats: ChatMeta[]): void {
     // status updates and broadcast lists are not conversations anyone can watch
     const list = chats.filter((c) => c.jid && !isJidBroadcast(c.jid) && !isHiddenJid(c.jid))
-    if (list.length) this.hooks.onChats?.(list)
+    if (!list.length) return
+    this.hooks.onChats?.(list)
+    this.resolveLids(list.map((c) => c.jid).filter((j) => j.endsWith('@lid')))
+  }
+
+  /** Message keys carry the phone JID next to the LID (remoteJidAlt for 1:1, participantAlt in groups). */
+  private emitKeyLinks(keys: (WAMessageKey | null | undefined)[]): void {
+    const out: ContactMeta[] = []
+    const seen = new Set<string>()
+    for (const key of keys) {
+      const k = key as (WAMessageKey & { remoteJidAlt?: string; participantAlt?: string }) | null | undefined
+      if (!k) continue
+      const pairs: [string | null | undefined, string | null | undefined][] = [[k.remoteJid, k.remoteJidAlt], [k.participant, k.participantAlt]]
+      for (const [a, b] of pairs) {
+        if (!a || !b) continue
+        const lid = a.endsWith('@lid') ? a : b.endsWith('@lid') ? b : undefined
+        const pn = a.endsWith('@s.whatsapp.net') ? a : b.endsWith('@s.whatsapp.net') ? b : undefined
+        if (lid && pn && !seen.has(lid)) { seen.add(lid); out.push({ jid: jidNormalizedUser(lid), phone_jid: jidNormalizedUser(pn) }) }
+      }
+    }
+    if (out.length) this.hooks.onContacts?.(out)
+  }
+
+  /** Group participant lists carry `phoneNumber` next to LID ids when WhatsApp shares it. */
+  private emitParticipantLinks(groups: { participants?: { id?: string; lid?: string; phoneNumber?: string }[] }[]): void {
+    const out: ContactMeta[] = []
+    for (const g of groups) {
+      for (const p of g.participants ?? []) {
+        const lid = p.lid ?? (p.id?.endsWith('@lid') ? p.id : undefined)
+        const pn = p.phoneNumber ?? (p.id?.endsWith('@s.whatsapp.net') ? p.id : undefined)
+        if (lid && pn) out.push({ jid: lid, phone_jid: pn })
+      }
+    }
+    if (out.length) this.hooks.onContacts?.(out)
+  }
+
+  /** Ask Baileys' LID store (and, through it, WhatsApp) for the phone number behind LID chats; batched, best effort. */
+  private resolveLids(lids: string[]): void {
+    const sock = this.sock
+    const store = (sock as unknown as { signalRepository?: { lidMapping?: { getPNsForLIDs?(l: string[]): Promise<{ lid: string; pn: string }[] | null>; getPNForLID?(l: string): Promise<string | null> } } })?.signalRepository?.lidMapping
+    const todo = [...new Set(lids)].filter((l) => !this.lidTried.has(l))
+    if (!store || !todo.length) return
+    for (const l of todo) this.lidTried.add(l)
+    const gen = this.generation
+    void (async () => {
+      for (let i = 0; i < todo.length; i += 50) {
+        if (gen !== this.generation) return
+        const batch = todo.slice(i, i + 50)
+        try {
+          let pairs: { lid: string; pn: string }[] = []
+          if (store.getPNsForLIDs) pairs = (await store.getPNsForLIDs(batch)) ?? []
+          else if (store.getPNForLID) for (const l of batch) { const pn = await store.getPNForLID(l); if (pn) pairs.push({ lid: l, pn }) }
+          const out = pairs.filter((p) => p?.lid && p?.pn).map((p) => ({ jid: jidNormalizedUser(p.lid), phone_jid: jidNormalizedUser(p.pn) }))
+          if (out.length) this.hooks.onContacts?.(out)
+        } catch (err) {
+          this.log.debug({ err: (err as Error).message }, 'lid -> phone lookup failed')
+        }
+      }
+    })()
   }
 
   private emitContacts(contacts: { id: string; lid?: string; name?: string; notify?: string; verifiedName?: string; phoneNumber?: string }[]): void {

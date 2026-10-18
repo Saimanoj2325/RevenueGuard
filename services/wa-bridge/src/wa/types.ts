@@ -116,6 +116,8 @@ export interface ConnectorHooks {
   /** Chat / contact / group names from the WhatsApp session for the chat picker. */
   onChats?(chats: ChatMeta[]): void
   onContacts?(contacts: ContactMeta[]): void
+  /** LID-addressed 1:1 chats that still have no phone number (the connector looks them up) */
+  unresolvedLids?(): string[]
 }
 
 export function isGroupJid(jid: string): boolean {

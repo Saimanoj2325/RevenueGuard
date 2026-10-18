@@ -26,7 +26,7 @@ export function chatTitle(c: WaChat): string {
   const name = c.name?.trim();
   if (name && !looksLikeJidOrNumber(name)) return name;
   const kind = chatKind(c);
-  if (kind === 'person') return formatPhone(chatPhone(c)) ?? (c.push_name ? `~ ${c.push_name}` : 'Unknown contact');
+  if (kind === 'person') return formatPhone(chatPhone(c)) ?? (c.push_name ? `~ ${c.push_name}` : 'Hidden number');
   if (kind === 'channel') return 'Unnamed channel';
   if (kind === 'community') return 'Unnamed community';
   return 'Unnamed group';
@@ -44,7 +44,7 @@ export function chatSubtitle(c: WaChat): string {
     const title = chatTitle(c);
     const phone = formatPhone(chatPhone(c));
     if (phone && phone !== title) parts.push(phone);
-    else if (!phone) parts.push('number hidden by WhatsApp');
+    else if (!phone) parts.push('WhatsApp has not shared the number yet');
     if (c.push_name && c.push_name !== title && `~ ${c.push_name}` !== title) parts.push(`~ ${c.push_name}`);
     else if (phone && phone === title) parts.push('not in your contacts');
   } else {
@@ -93,3 +93,8 @@ export const FILTERS: { key: ChatFilter; label: string }[] = [
   { key: 'all', label: 'All' }, { key: 'selected', label: 'Selected' }, { key: 'person', label: 'People' },
   { key: 'group', label: 'Groups' }, { key: 'community', label: 'Communities' }, { key: 'channel', label: 'Channels' },
 ];
+
+/** A 1:1 chat with no number, no saved name and no profile name: nothing to tell it apart by. */
+export function isFaceless(c: WaChat): boolean {
+  return chatKind(c) === 'person' && !chatPhone(c) && !c.push_name && !(c.name && !/@|^[\s+\-().\d]{6,}$/.test(c.name));
+}

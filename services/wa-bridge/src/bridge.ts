@@ -142,6 +142,13 @@ export class Bridge {
           }
         }
       },
+      unresolvedLids: () => {
+        try {
+          return this.store.unresolvedLids()
+        } catch {
+          return []
+        }
+      },
       onContacts: (contacts) => {
         for (const c of contacts) {
           try {
