@@ -408,7 +408,7 @@ async def test_whatsapp_chat_picker_mock_and_bridge_proxy(api, db, monkeypatch):
 
     async def fake_bridge(method, path, payload=None):
         calls.append((method, path, payload))
-        if path == "/chats":
+        if path.startswith("/chats"):
             return [{"jid": "a@g.us", "name": "Ops", "is_group": True, "last_message_at": 1760000000}]
         if path == "/allowlist" and method == "GET":
             return {"jids": ["a@g.us"]}
@@ -423,7 +423,7 @@ async def test_whatsapp_chat_picker_mock_and_bridge_proxy(api, db, monkeypatch):
     assert ("PUT", "/allowlist", {"jids": ["b@g.us"]}) in calls
     # kinds, numbers and names come through; the raw JID is never used as a name
     async def fake_bridge2(method, path, payload=None):
-        if path == "/chats":
+        if path.startswith("/chats"):
             return [
                 {"jid": "1@g.us", "name": "Traders", "is_group": True, "kind": "community", "members": 240, "last_message_at": 1760000300},
                 {"jid": "9@newsletter", "name": "GST Updates", "is_group": False, "last_message_at": 1760000200},
@@ -438,6 +438,24 @@ async def test_whatsapp_chat_picker_mock_and_bridge_proxy(api, db, monkeypatch):
     assert items["9@newsletter"]["kind"] == "channel" and items["9@newsletter"]["is_group"] is False
     assert items["81234@lid"]["name"] is None and items["81234@lid"]["phone"] == "919876543204"
     assert "status@broadcast" not in items
+
+    # stored status drifted: bridge says it's paired -> connector flips to connected; bridge says QR -> no stale chats
+    from app.connectors import whatsapp as wa_mod
+
+    async def st_open(self):
+        return {"state": "open"}
+
+    async def st_qr(self):
+        return {"state": "qr"}
+
+    monkeypatch.setattr(wa_mod.BridgeWhatsApp, "status", st_open)
+    conns = {c["name"]: c for c in (await api.get("/connectors")).json()["items"]}
+    assert conns["whatsapp"]["status"] == "connected"
+    monkeypatch.setattr(wa_mod.BridgeWhatsApp, "status", st_qr)
+    r = (await api.get("/connectors/whatsapp/chats")).json()
+    assert r["items"] == [] and r["state"] == "qr"
+    conns = {c["name"]: c for c in (await api.get("/connectors")).json()["items"]}
+    assert conns["whatsapp"]["status"] == "disconnected"
 
 
 async def test_sheet_mapping_proposal_and_read_delivery(api, db):

@@ -20,10 +20,38 @@ from ..security import encrypt_json, sign_state, verify_state
 router = APIRouter(prefix="/connectors")
 
 
+async def _sync_whatsapp_status(session: AsyncSession, tenant_id: str) -> str | None:
+    """Ask wa-bridge for its real state and fix the stored status when it drifted (a missed 'connection' event,
+    an API restart while paired, or a pairing done before the API was up). Returns the bridge state, or None when
+    the bridge is unreachable (stored status is left alone)."""
+    c = await get_connector(session, tenant_id, "whatsapp")
+    if c.mode == "mock":
+        return None
+    try:
+        from ..connectors.whatsapp import BridgeWhatsApp
+
+        st = (await BridgeWhatsApp(session, c, tenant_id).status()) or {}
+    except Exception:  # noqa: BLE001 - bridge down: keep what we have
+        return None
+    if st.get("error"):
+        return None
+    state = st.get("state")
+    want = "connected" if state == "open" else ("disconnected" if state in ("close", "closed", "disconnected", "logged_out", "qr") else None)
+    if want and c.status != want and c.status != "revoked":
+        c.status = want
+        if want == "connected" and not c.authorized_at:
+            c.authorized_at, c.authorized_by = utcnow(), "whatsapp-qr"
+        await append_audit(session, tenant_id, "connector.whatsapp", "status-sync", {"state": state})
+        await session.flush()
+        await emit(tenant_id, "connector.updated", name="whatsapp", status=state)
+    return state
+
+
 @router.get("")
 async def connectors(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
     from ..business import connector_health
 
+    await _sync_whatsapp_status(session, user.tenant_id)
     out = await list_connectors(session, user.tenant_id)
     health = await connector_health(session, user.tenant_id)
     for c in out:
@@ -343,8 +371,13 @@ async def whatsapp_chats(user: User = Depends(current_user), session: AsyncSessi
             ts = last.get(ch["jid"]) or (now - timedelta(hours=2 + 7 * i))
             items.append(_chat_row(ch, ts.isoformat(), (ch["jid"] in allow) if allow is not None else ch["watched"]))
         return {"items": items, "mode": "mock"}
+    state = await _sync_whatsapp_status(session, user.tenant_id)
+    await session.commit()
+    if state is not None and state != "open":
+        # not paired right now: don't show chats left over from an earlier session as if they were live
+        return {"items": [], "mode": "live", "state": state}
     try:
-        chats = await _bridge("GET", "/chats")
+        chats = await _bridge("GET", "/chats?limit=2000")
         allow = (await _bridge("GET", "/allowlist")).get("jids", [])
     except httpx.HTTPError as e:
         raise HTTPException(502, "WhatsApp bridge is not reachable. Check that WhatsApp is paired.") from e

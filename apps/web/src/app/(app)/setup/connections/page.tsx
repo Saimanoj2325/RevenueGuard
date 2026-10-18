@@ -14,10 +14,16 @@ import { useT } from '@/i18n';
 import type { ConnectorV2, WaChat, WaChatKind } from '@/lib/v2types';
 import { FILTERS, chatKind, chatSubtitle, chatTitle, inFilter, matchesSearch, sortChats, type ChatFilter } from '@/lib/waChats';
 
-const META: Record<string, { label: string; Icon: any }> = {
-  google: { label: 'Gmail', Icon: Mail }, whatsapp: { label: 'WhatsApp', Icon: MessageCircle }, sheets: { label: 'Delivery sheet', Icon: FileSpreadsheet },
-  zoho: { label: 'Zoho Books', Icon: ReceiptText }, tally: { label: 'Tally', Icon: ReceiptText }, bank: { label: 'Bank statement', Icon: Landmark },
+const META: Record<string, { label: string; Icon: any; todo: string }> = {
+  google: { label: 'Gmail', Icon: Mail, todo: 'Sign in with Google to read order and payment emails.' },
+  whatsapp: { label: 'WhatsApp', Icon: MessageCircle, todo: 'Scan a QR code with WhatsApp on your phone.' },
+  sheets: { label: 'Delivery sheet', Icon: FileSpreadsheet, todo: 'Pick the Google Sheet where deliveries are logged.' },
+  zoho: { label: 'Zoho Books', Icon: ReceiptText, todo: 'Sign in to Zoho Books to raise invoices.' },
+  tally: { label: 'Tally', Icon: ReceiptText, todo: 'Connect Tally to raise invoices.' },
+  bank: { label: 'Bank statement', Icon: Landmark, todo: 'Upload a bank statement CSV.' },
 };
+/** Card name -> connector row name in the API ("google" is the Gmail connector). */
+const ROW_NAME: Record<string, string> = { google: 'gmail' };
 const KIND_ICON: Record<WaChatKind, any> = { person: User, group: Users, community: Network, announcement: Megaphone, channel: Radio, broadcast: Radio };
 const KIND_TONE: Record<WaChatKind, string> = {
   person: 'bg-[#EEF3EC] text-[#2F5D3A]', group: 'bg-[#EAF0F7] text-[#2C4F7C]', community: 'bg-[#F3ECF7] text-[#5E3A7C]',
@@ -35,15 +41,22 @@ function healthOf(c?: ConnectorV2): { word: string; tone: 'green' | 'amber' | 'r
 function ConnCard({ name, c, onReconnect }: { name: string; c?: ConnectorV2; onReconnect: () => void }) {
   const m = META[name];
   const h = healthOf(c);
+  const notLinked = !c || c.status === 'disconnected';
   return (
     <Card className="flex flex-col p-4 sm:p-5">
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2.5 font-semibold"><m.Icon size={17} strokeWidth={1.8} />{m.label}</span>
         <span className={clsx('inline-flex items-center gap-1.5 text-[13px]', h.tone === 'green' ? 'text-green' : h.tone === 'red' ? 'text-red' : 'text-amber')}><span className={clsx('h-2 w-2 rounded-full', h.tone === 'green' ? 'bg-green' : h.tone === 'red' ? 'bg-red' : 'bg-amber')} />{h.word}</span>
       </div>
-      <div className="mt-2 text-[13px] text-ink-3">{[c?.account, c?.detail].filter(Boolean).join(' · ') || 'Not connected yet'}</div>
-      <div className="mt-1 text-[13.5px]">{c?.error_plain && h.tone !== 'green' ? <span className={h.tone === 'red' ? 'text-red' : 'text-amber'}>{c.error_plain}</span> : c?.last_sync ? `Synced ${minsAgo(c.last_sync)}` : 'Waiting for first sync'}</div>
-      {h.tone !== 'green' && <button className="btn-ghost btn-sm mt-3 self-start" onClick={onReconnect}><RefreshCw size={13} />{c?.status === 'disconnected' ? 'Connect' : 'Reconnect'}</button>}
+      {notLinked ? (
+        <div className="mt-2 text-[13.5px] text-ink-3">{m.todo}</div>
+      ) : (
+        <>
+          {(c?.account || c?.detail) && <div className="mt-2 text-[13px] text-ink-3">{[c?.account, c?.detail].filter(Boolean).join(' · ')}</div>}
+          <div className="mt-1 text-[13.5px]">{c?.error_plain && h.tone !== 'green' ? <span className={h.tone === 'red' ? 'text-red' : 'text-amber'}>{c.error_plain}</span> : c?.last_sync ? `Synced ${minsAgo(c.last_sync)}` : 'Waiting for first sync'}</div>
+        </>
+      )}
+      {h.tone !== 'green' && <button className="btn-ghost btn-sm mt-3 self-start" onClick={onReconnect}><RefreshCw size={13} />{notLinked ? 'Connect' : 'Reconnect'}</button>}
     </Card>
   );
 }
@@ -67,10 +80,13 @@ export default function ConnectionsPage() {
   }, [chats.data, sel]);
   // re-pin the current selection whenever the filter or search changes
   useEffect(() => { if (sel) setPinned(new Set(sel)); }, [kind, s]); // eslint-disable-line react-hooks/exhaustive-deps
-  const byName = (n: string) => (q.data ?? []).find((c) => c.name === n);
+  const byName = (n: string) => (q.data ?? []).find((c) => c.name === (ROW_NAME[n] ?? n));
   const acct = byName('zoho')?.status === 'connected' ? 'zoho' : byName('tally')?.status === 'connected' ? 'tally' : 'zoho';
   const wa = byName('whatsapp');
-  const all = useMemo(() => (chats.data ?? []).filter((c) => chatKind(c) !== 'broadcast' || c.watched), [chats.data]);
+  const waOn = wa?.status === 'connected';
+  useEffect(() => { if (waOn) chats.reload(); }, [waOn]); // eslint-disable-line react-hooks/exhaustive-deps
+  // chats left in the bridge from an earlier pairing are not shown (or counted) until WhatsApp is linked again
+  const all = useMemo(() => (waOn ? (chats.data ?? []) : []).filter((c) => chatKind(c) !== 'broadcast' || c.watched), [chats.data, waOn]);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, all.filter((c) => inFilter(c, f.key, sel ?? new Set())).length])) as Record<ChatFilter, number>, [all, sel]);
   const rows = useMemo(() => sortChats(all.filter((c) => inFilter(c, kind, pinned) && matchesSearch(c, s)), pinned), [all, kind, s, pinned]);
   const dirty = !!sel && !!chats.data && chats.data.some((c) => c.watched !== sel.has(c.jid));
@@ -108,7 +124,7 @@ export default function ConnectionsPage() {
             <div className="flex flex-wrap items-center gap-2 border-b border-rule p-3">
               <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded border border-rule-2 bg-card px-3 py-1.5 text-ink-3"><Search size={14} /><input className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink focus:outline-none" placeholder="Search chats" value={s} onChange={(e) => setS(e.target.value)} /></label>
               <div className="flex flex-wrap gap-1.5">
-                {FILTERS.filter((f) => f.key === 'all' || counts[f.key] > 0 || kind === f.key).map((f) => (
+                {waOn && FILTERS.filter((f) => f.key === 'all' || counts[f.key] > 0 || kind === f.key).map((f) => (
                   <button key={f.key} className={clsx('pill py-1 text-[12.5px]', kind === f.key && 'pill-on')} onClick={() => setKind(kind === f.key && f.key !== 'all' ? 'all' : f.key)}>
                     {f.label}<span className="ml-1 tabular-nums opacity-60">{counts[f.key]}</span>
                   </button>
@@ -151,7 +167,7 @@ export default function ConnectionsPage() {
             <p><b>New number mentions a PO?</b> We ask you first: &quot;Unknown number sent a challan for PO-201. Watch this chat?&quot;</p>
             <p><b>Your own messages</b> from this number are ignored, so test from another phone.</p>
           </Card>
-          {byName('bank') && <Card className="mt-3 flex items-center justify-between p-4 text-[13px]"><span className="flex items-center gap-2"><Landmark size={15} />Bank statement · {byName('bank')?.detail}</span><Link href="/advanced/connectors" className="text-ink-2 underline">Upload</Link></Card>}
+          {byName('bank') && <Card className="mt-3 flex items-center justify-between p-4 text-[13px]"><span className="flex items-center gap-2"><Landmark size={15} />{byName('bank')?.detail ? `Bank statement · ${byName('bank')?.detail}` : 'Bank statement: none uploaded yet'}</span><Link href="/advanced/connectors" className="text-ink-2 underline">Upload</Link></Card>}
         </aside>
       </div>
       {qr && <WaQr onClose={() => setQr(false)} onPaired={() => { setQr(false); q.reload(); chats.reload(); }} />}
