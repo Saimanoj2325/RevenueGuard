@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { AlertTriangle, FileSpreadsheet, Landmark, Mail, MessageCircle, ReceiptText, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, FileSpreadsheet, Landmark, Mail, Megaphone, MessageCircle, Network, Radio, ReceiptText, RefreshCw, Search, User, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { WaQr } from '@/components/money/WaQr';
@@ -11,12 +11,19 @@ import { minsAgo } from '@/lib/format';
 import { useLive } from '@/lib/hooks';
 import { useAuth } from '@/lib/store';
 import { useT } from '@/i18n';
-import type { ConnectorV2, WaChat } from '@/lib/v2types';
+import type { ConnectorV2, WaChat, WaChatKind } from '@/lib/v2types';
+import { FILTERS, chatKind, chatSubtitle, chatTitle, inFilter, matchesSearch, sortChats, type ChatFilter } from '@/lib/waChats';
 
 const META: Record<string, { label: string; Icon: any }> = {
   google: { label: 'Gmail', Icon: Mail }, whatsapp: { label: 'WhatsApp', Icon: MessageCircle }, sheets: { label: 'Delivery sheet', Icon: FileSpreadsheet },
   zoho: { label: 'Zoho Books', Icon: ReceiptText }, tally: { label: 'Tally', Icon: ReceiptText }, bank: { label: 'Bank statement', Icon: Landmark },
 };
+const KIND_ICON: Record<WaChatKind, any> = { person: User, group: Users, community: Network, announcement: Megaphone, channel: Radio, broadcast: Radio };
+const KIND_TONE: Record<WaChatKind, string> = {
+  person: 'bg-[#EEF3EC] text-[#2F5D3A]', group: 'bg-[#EAF0F7] text-[#2C4F7C]', community: 'bg-[#F3ECF7] text-[#5E3A7C]',
+  announcement: 'bg-[#F3ECF7] text-[#5E3A7C]', channel: 'bg-[#FBF1E4] text-[#8A5A1C]', broadcast: 'bg-[#FBF1E4] text-[#8A5A1C]',
+};
+
 function healthOf(c?: ConnectorV2): { word: string; tone: 'green' | 'amber' | 'red' } {
   if (!c || c.status === 'disconnected') return { word: 'Not finished', tone: 'amber' };
   if (c.health === 'down' || c.status === 'degraded' || c.status === 'error') return { word: 'Down', tone: 'red' };
@@ -47,16 +54,25 @@ export default function ConnectionsPage() {
   const q = useLive(() => api.connectorsV2(), [], (e) => e.type === 'connector.updated', 200);
   const chats = useLive(() => api.waChats().catch(() => [] as WaChat[]), []);
   const [sel, setSel] = useState<Set<string> | null>(null);
-  const [kind, setKind] = useState<'all' | 'group' | 'person'>('all');
+  const [kind, setKind] = useState<ChatFilter>('all');
+  // chats that sort to the top: the selection as it stood when the list loaded, the filter/search changed, or it was saved.
+  // Not re-sorted on every tick, so a row never jumps away from under the cursor.
+  const [pinned, setPinned] = useState<Set<string>>(new Set());
   const [s, setS] = useState('');
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState(false);
-  useEffect(() => { if (chats.data && !sel) setSel(new Set(chats.data.filter((c) => c.watched).map((c) => c.jid))); }, [chats.data, sel]);
+  useEffect(() => {
+    if (chats.data && !sel) { const w = new Set(chats.data.filter((c) => c.watched).map((c) => c.jid)); setSel(w); setPinned(w); }
+  }, [chats.data, sel]);
+  // re-pin the current selection whenever the filter or search changes
+  useEffect(() => { if (sel) setPinned(new Set(sel)); }, [kind, s]); // eslint-disable-line react-hooks/exhaustive-deps
   const byName = (n: string) => (q.data ?? []).find((c) => c.name === n);
   const acct = byName('zoho')?.status === 'connected' ? 'zoho' : byName('tally')?.status === 'connected' ? 'tally' : 'zoho';
   const wa = byName('whatsapp');
-  const rows = useMemo(() => (chats.data ?? []).filter((c) => (kind === 'all' || (kind === 'group') === c.is_group) && c.name.toLowerCase().includes(s.toLowerCase())), [chats.data, kind, s]);
+  const all = useMemo(() => (chats.data ?? []).filter((c) => chatKind(c) !== 'broadcast' || c.watched), [chats.data]);
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, all.filter((c) => inFilter(c, f.key, sel ?? new Set())).length])) as Record<ChatFilter, number>, [all, sel]);
+  const rows = useMemo(() => sortChats(all.filter((c) => inFilter(c, kind, pinned) && matchesSearch(c, s)), pinned), [all, kind, s, pinned]);
   const dirty = !!sel && !!chats.data && chats.data.some((c) => c.watched !== sel.has(c.jid));
 
   async function reconnect(name: string) {
@@ -68,7 +84,7 @@ export default function ConnectionsPage() {
   async function save() {
     if (!sel) return;
     setBusy(true); setMsg(null);
-    try { await api.setWaChats(Array.from(sel)); setMsg({ tone: 'green', text: `Saved. Watching ${sel.size} chats. Messages from other chats are dropped before they are stored.` }); chats.reload(); }
+    try { await api.setWaChats(Array.from(sel)); setPinned(new Set(sel)); setMsg({ tone: 'green', text: `Saved. Watching ${sel.size} chats. Messages from other chats are dropped before they are stored.` }); chats.reload(); }
     catch (e: any) { setMsg({ tone: 'red', text: plainError(e?.message) }); }
     finally { setBusy(false); }
   }
@@ -91,17 +107,29 @@ export default function ConnectionsPage() {
           <Card>
             <div className="flex flex-wrap items-center gap-2 border-b border-rule p-3">
               <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded border border-rule-2 bg-card px-3 py-1.5 text-ink-3"><Search size={14} /><input className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink focus:outline-none" placeholder="Search chats" value={s} onChange={(e) => setS(e.target.value)} /></label>
-              {(['group', 'person'] as const).map((k) => <button key={k} className={clsx('pill py-1 text-[12.5px]', kind === k && 'pill-on')} onClick={() => setKind(kind === k ? 'all' : k)}>{k === 'group' ? 'Groups' : 'People'}</button>)}
+              <div className="flex flex-wrap gap-1.5">
+                {FILTERS.filter((f) => f.key === 'all' || counts[f.key] > 0 || kind === f.key).map((f) => (
+                  <button key={f.key} className={clsx('pill py-1 text-[12.5px]', kind === f.key && 'pill-on')} onClick={() => setKind(kind === f.key && f.key !== 'all' ? 'all' : f.key)}>
+                    {f.label}<span className="ml-1 tabular-nums opacity-60">{counts[f.key]}</span>
+                  </button>
+                ))}
+              </div>
             </div>
             {wa?.status !== 'connected' ? <EmptyState title="WhatsApp is not linked yet." hint="Link it with a QR code. Nothing is read until you tick chats here." action={<button className="btn" onClick={() => setQr(true)}>Link WhatsApp</button>} />
               : !chats.data ? <Skeleton lines={5} className="p-3" />
-              : rows.length === 0 ? <EmptyState title="No chats match." />
-              : rows.map((c) => {
+              : rows.length === 0 ? <EmptyState title={kind === 'selected' ? 'No chats selected yet.' : 'No chats match.'} />
+              : rows.map((c, i) => {
                 const on = sel?.has(c.jid) ?? false;
+                const k = chatKind(c);
+                const KIcon = KIND_ICON[k];
+                const firstUnpinned = i > 0 && pinned.has(rows[i - 1]!.jid) && !pinned.has(c.jid);
                 return (
-                  <label key={c.jid} className="grid cursor-pointer grid-cols-[28px_minmax(0,1fr)] items-center gap-x-3 border-b border-rule px-4 py-3 last:border-0 hover:bg-[#FBF9F3] sm:grid-cols-[28px_minmax(0,1.2fr)_110px_minmax(0,1fr)]">
+                  <label key={c.jid} className={clsx(firstUnpinned && 'border-t-2 border-t-rule-2', 'grid cursor-pointer grid-cols-[28px_minmax(0,1fr)] items-center gap-x-3 border-b border-rule px-4 py-3 last:border-0 hover:bg-[#FBF9F3] sm:grid-cols-[28px_minmax(0,1.2fr)_110px_minmax(0,1fr)]')}>
                     <input type="checkbox" className="h-4 w-4 accent-[#1A1A17]" checked={on} disabled={user?.role !== 'admin'} onChange={() => setSel((p) => { const n = new Set(p ?? []); if (n.has(c.jid)) n.delete(c.jid); else n.add(c.jid); return n; })} />
-                    <div className="min-w-0"><div className="truncate font-semibold">{c.name}</div><div className="text-[12.5px] text-ink-3">{c.is_group ? `Group${c.members ? ` · ${c.members} people` : ''}` : 'Person'}</div></div>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-full', KIND_TONE[k])} title={k}><KIcon size={15} strokeWidth={1.8} /></span>
+                      <div className="min-w-0"><div className="truncate font-semibold">{chatTitle(c)}</div><div className="truncate text-[12.5px] text-ink-3">{chatSubtitle(c)}</div></div>
+                    </div>
                     <div className="col-start-2 text-[12.5px] text-ink-3 sm:col-start-auto sm:text-[13px]">{minsAgo(c.last_message_at)}</div>
                     <div className={clsx('col-start-2 text-[13px] sm:col-start-auto', on ? 'text-ink' : 'text-ink-3')}>{on ? c.note || 'Watched' : 'Not watched · never read or stored'}</div>
                   </label>

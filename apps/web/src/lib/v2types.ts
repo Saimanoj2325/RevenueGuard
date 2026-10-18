@@ -116,7 +116,17 @@ export interface ConnectorV2 {
   name: string; status: string; account?: string | null; detail?: string | null; last_sync?: string | null;
   health?: 'ok' | 'slow' | 'down' | 'relogin'; error_plain?: string | null; config?: Record<string, unknown>;
 }
-export interface WaChat { jid: string; name: string; is_group: boolean; last_message_at: string | null; watched: boolean; note?: string; members?: number }
+export type WaChatKind = 'person' | 'group' | 'community' | 'announcement' | 'channel' | 'broadcast';
+export interface WaChat {
+  jid: string; name: string | null; is_group: boolean; last_message_at: string | null; watched: boolean; note?: string; members?: number;
+  /** person | group | community | announcement (a community's announcement group) | channel | broadcast; older APIs omit it */
+  kind?: WaChatKind;
+  /** phone digits for 1:1 chats (resolved from LID when WhatsApp hides it) */
+  phone?: string | null;
+  /** WhatsApp profile name when it differs from the saved contact name */
+  push_name?: string;
+  parent?: string; parent_name?: string;
+}
 export interface SheetColumn { header: string; meaning: string; confidence: 'sure' | 'check'; sample: string }
 export interface Backfill { sources: { name: string; done: number; total: number; status: string; label?: string }[]; first_case_ref: string | null; found_amount?: number; found_count?: number }
 export interface AskAnswer { answer: string; table: { columns: string[]; rows: (string | number)[][] } | null; proofs: Proof[]; actions: { label: string; href: string }[]; note?: string }

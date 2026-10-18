@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
+import { kindOfJid, phoneOf } from './wa/types.js'
+import type { ChatKind } from './wa/types.js'
 
 export interface StoredMessage {
   id: string
@@ -151,6 +153,15 @@ export class Store {
       ['edited_at', 'INTEGER'],
     ]
     for (const [name, def] of add) if (!cols.has(name)) this.db.exec(`ALTER TABLE messages ADD COLUMN ${name} ${def}`)
+    // chat picker v2: chat kind (person/group/community/announcement/channel), member count, community parent,
+    // contact push names kept apart from saved names, and LID -> phone links
+    const addCols = (table: string, defs: [string, string][]) => {
+      const have = new Set((this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name))
+      for (const [name, def] of defs) if (!have.has(name)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`)
+    }
+    addCols('chats', [['kind', 'TEXT'], ['members', 'INTEGER'], ['parent', 'TEXT']])
+    addCols('contacts', [['push', 'TEXT']])
+    this.db.exec(`CREATE TABLE IF NOT EXISTS lid_map (lid TEXT PRIMARY KEY, pn TEXT NOT NULL)`)
   }
 
   // ---------- allowlist ----------
@@ -177,27 +188,87 @@ export class Store {
 
   // ---------- chat picker metadata ----------
 
-  upsertChat(c: { jid: string; name?: string | null; is_group?: boolean; last_message_at?: number | null }): void {
+  upsertChat(c: { jid: string; name?: string | null; is_group?: boolean; kind?: ChatKind; members?: number | null; parent?: string | null; last_message_at?: number | null }): void {
+    const kind = c.kind ?? kindOfJid(c.jid)
     this.db
-      .prepare(`INSERT INTO chats (jid, name, is_group, last_message_at) VALUES (@jid, @name, @is_group, @last)
+      .prepare(`INSERT INTO chats (jid, name, is_group, kind, members, parent, last_message_at) VALUES (@jid, @name, @is_group, @kind, @members, @parent, @last)
                 ON CONFLICT(jid) DO UPDATE SET
                   name = COALESCE(excluded.name, chats.name),
                   is_group = MAX(chats.is_group, excluded.is_group),
+                  -- a plain 'group' update (no community flags) never downgrades a known community / announcement group
+                  kind = CASE WHEN excluded.kind = 'group' AND chats.kind IN ('community', 'announcement') AND @explicit = 0 THEN chats.kind
+                              ELSE COALESCE(excluded.kind, chats.kind) END,
+                  members = COALESCE(excluded.members, chats.members),
+                  parent = COALESCE(excluded.parent, chats.parent),
                   last_message_at = MAX(COALESCE(chats.last_message_at, 0), COALESCE(excluded.last_message_at, 0))`)
-      .run({ jid: c.jid, name: c.name || null, is_group: c.is_group ? 1 : 0, last: c.last_message_at ?? null })
+      .run({
+        jid: c.jid,
+        name: c.name || null,
+        is_group: c.is_group || kind === 'group' || kind === 'community' || kind === 'announcement' ? 1 : 0,
+        kind,
+        explicit: c.kind ? 1 : 0,
+        members: c.members ?? null,
+        parent: c.parent ?? null,
+        last: c.last_message_at ?? null,
+      })
   }
 
-  upsertContact(jid: string, name: string): void {
-    this.db.prepare('INSERT INTO contacts (jid, name) VALUES (?, ?) ON CONFLICT(jid) DO UPDATE SET name = excluded.name').run(jid, name)
+  /** Saved contact name and/or WhatsApp profile name. Either may be null; existing values are kept. */
+  upsertContact(jid: string, name?: string | null, push?: string | null): void {
+    if (!name && !push) return
+    this.db
+      .prepare(`INSERT INTO contacts (jid, name, push) VALUES (@jid, @name, @push)
+                ON CONFLICT(jid) DO UPDATE SET name = COALESCE(NULLIF(excluded.name, ''), contacts.name), push = COALESCE(excluded.push, contacts.push)`)
+      .run({ jid, name: name || '', push: push || null })
   }
 
-  listChats(limit = 500): { jid: string; name: string | null; is_group: boolean; last_message_at: number | null }[] {
+  /** Remember which phone JID a LID belongs to. */
+  linkLid(lid: string, pnJid: string): void {
+    if (!lid.endsWith('@lid') || !pnJid.endsWith('@s.whatsapp.net')) return
+    this.db.prepare('INSERT INTO lid_map (lid, pn) VALUES (?, ?) ON CONFLICT(lid) DO UPDATE SET pn = excluded.pn').run(lid, pnJid)
+  }
+
+  /**
+   * Picker rows. Name priority: saved contact name > group / channel title > WhatsApp profile name > none.
+   * `phone` is the real number (digits) for 1:1 chats, resolved through the LID map when the chat is LID-addressed.
+   */
+  listChats(limit = 500): ChatRow[] {
     const rows = this.db
-      .prepare(`SELECT c.jid, COALESCE(c.name, k.name) AS name, c.is_group, c.last_message_at
-                FROM chats c LEFT JOIN contacts k ON k.jid = c.jid
+      .prepare(`SELECT c.jid, c.name AS chat_name, c.is_group, c.kind, c.members, c.parent, c.last_message_at,
+                       COALESCE(NULLIF(k.name, ''), NULLIF(kp.name, '')) AS saved_name,
+                       COALESCE(k.push, kp.push) AS push_name,
+                       COALESCE(m.pn, CASE WHEN c.jid LIKE '%@s.whatsapp.net' THEN c.jid END) AS pn,
+                       p.name AS parent_name
+                FROM chats c
+                LEFT JOIN lid_map m ON m.lid = c.jid
+                LEFT JOIN contacts k ON k.jid = c.jid
+                LEFT JOIN contacts kp ON kp.jid = m.pn
+                LEFT JOIN chats p ON p.jid = c.parent
+                WHERE c.jid <> 'status@broadcast'
                 ORDER BY COALESCE(c.last_message_at, 0) DESC, c.jid LIMIT ?`)
-      .all(Math.min(Math.max(limit, 1), 2000)) as { jid: string; name: string | null; is_group: number; last_message_at: number | null }[]
-    return rows.map((r) => ({ jid: r.jid, name: r.name ?? null, is_group: Number(r.is_group) === 1, last_message_at: r.last_message_at ? Number(r.last_message_at) : null }))
+      .all(Math.min(Math.max(limit, 1), 2000)) as {
+      jid: string; chat_name: string | null; is_group: number; kind: string | null; members: number | null; parent: string | null
+      last_message_at: number | null; saved_name: string | null; push_name: string | null; pn: string | null; parent_name: string | null
+    }[]
+    return rows.map((r) => {
+      const kind = (r.kind as ChatKind | null) ?? kindOfJid(r.jid)
+      const person = kind === 'person'
+      const phone = person && r.pn ? phoneOf(r.pn) : null
+      // a 1:1 chat's own name can be a stale push name; saved contact name wins
+      const name = person ? (r.saved_name || r.chat_name || r.push_name || null) : (r.chat_name || r.saved_name || null)
+      const row: ChatRow = {
+        jid: r.jid,
+        name: name && !isJustNumber(name, phone) ? name : null,
+        is_group: Number(r.is_group) === 1,
+        kind,
+        last_message_at: r.last_message_at ? Number(r.last_message_at) : null,
+      }
+      if (phone) row.phone = phone
+      if (person && r.push_name && r.push_name !== row.name) row.push_name = r.push_name
+      if (r.members) row.members = Number(r.members)
+      if (r.parent) { row.parent = r.parent; if (r.parent_name) row.parent_name = r.parent_name }
+      return row
+    })
   }
 
   // ---------- pending approval prompts ----------
@@ -384,4 +455,26 @@ export function parseSince(v: string | undefined): number | undefined {
   }
   const t = Date.parse(v)
   return Number.isNaN(t) ? undefined : Math.floor(t / 1000)
+}
+
+export interface ChatRow {
+  jid: string
+  name: string | null
+  is_group: boolean
+  kind: ChatKind
+  last_message_at: number | null
+  /** digits only, e.g. 919876543210 (1:1 chats) */
+  phone?: string
+  /** WhatsApp profile name when it differs from the saved name */
+  push_name?: string
+  members?: number
+  parent?: string
+  parent_name?: string
+}
+
+/** "+91 98765 43210" or "919876543210" as a name adds nothing over the phone column. */
+function isJustNumber(name: string, phone: string | null): boolean {
+  const digits = name.replace(/[\s+\-().]/g, '')
+  if (!/^\d{6,15}$/.test(digits)) return false
+  return !phone || phone.endsWith(digits) || digits.endsWith(phone)
 }

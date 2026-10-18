@@ -92,12 +92,14 @@ export class Bridge {
   /** Privacy gate: record picker metadata (name + time only), then allow or drop. Never sees message content. */
   admit(env: InboundEnvelope): boolean {
     try {
-      this.store.upsertChat({
-        jid: normalizeJid(env.chat_id),
-        name: env.is_group ? null : (env.push_name ?? null),
-        is_group: env.is_group,
-        last_message_at: env.ts,
-      })
+      const jid = normalizeJid(env.chat_id)
+      // time only on the chat row; a 1:1 sender's profile name goes to contacts so it never hides the saved name
+      this.store.upsertChat({ jid, is_group: env.is_group, last_message_at: env.ts })
+      if (!env.is_group) {
+        const alt = env.chat_alt ? normalizeJid(env.chat_alt) : undefined
+        if (alt && alt !== jid) this.store.linkLid(jid, alt)
+        if (env.push_name) this.store.upsertContact(jid, null, env.push_name)
+      }
     } catch {
       /* bad jid: still apply the gate below */
     }
@@ -143,7 +145,9 @@ export class Bridge {
       onContacts: (contacts) => {
         for (const c of contacts) {
           try {
-            this.store.upsertContact(normalizeJid(c.jid), c.name)
+            const jid = normalizeJid(c.jid)
+            this.store.upsertContact(jid, c.name ?? null, c.push ?? null)
+            if (c.phone_jid) this.store.linkLid(jid, normalizeJid(c.phone_jid))
           } catch {
             /* ignore */
           }

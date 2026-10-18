@@ -129,6 +129,12 @@ export function seedBiz(): Biz {
     { jid: '919000000333@s.whatsapp.net', name: 'Accounts – Priya', is_group: false, last_message_at: iso(2), watched: true, note: '' },
     { jid: '120363003@g.us', name: 'Family', is_group: true, members: 9, last_message_at: iso(0, -0.02), watched: false, note: '' },
     { jid: '120363004@g.us', name: 'College friends', is_group: true, members: 31, last_message_at: iso(0, -0.17), watched: false, note: '' },
+    { jid: '919876543204@s.whatsapp.net', name: null, is_group: false, kind: 'person', phone: '919876543204', push_name: 'Suresh', last_message_at: iso(0, -0.5), watched: false, note: '' },
+    { jid: '81234567890123@lid', name: null, is_group: false, kind: 'person', phone: null, last_message_at: iso(0, -0.6), watched: false, note: '' },
+    { jid: '120363010@g.us', name: 'Hyderabad Traders Association', is_group: true, kind: 'community', members: 240, last_message_at: iso(1), watched: false, note: '' },
+    { jid: '120363011@g.us', name: 'Hyderabad Traders Association', is_group: true, kind: 'announcement', parent: '120363010@g.us', parent_name: 'Hyderabad Traders Association', members: 240, last_message_at: iso(1), watched: false, note: '' },
+    { jid: '120363012@g.us', name: 'Steel dealers', is_group: true, kind: 'group', parent: '120363010@g.us', parent_name: 'Hyderabad Traders Association', members: 46, last_message_at: iso(0, -3), watched: false, note: '' },
+    { jid: '120363013@newsletter', name: 'GST Council Updates', is_group: false, kind: 'channel', last_message_at: iso(0, -8), watched: false, note: '' },
   ];
   const settings: Settings = {
     company: { name: 'Demo Manufacturing Pvt Ltd', gstin: SELLER_GSTIN, state_code: SELLER_STATE, upi_vpa: 'demomfg@icici' },

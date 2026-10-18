@@ -119,3 +119,15 @@ export function maskPhone(p?: string | null) {
   const d = p.replace(/\D/g, '');
   return `+91 ${d.slice(-10, -8)}••• ••${d.slice(-3)}`;
 }
+
+/** "919876543204" -> "+91 98765 43204"; other country codes -> "+CC NNNN NNNN…". Null when it is not a phone number. */
+export function formatPhone(digits?: string | null): string | null {
+  const d = (digits ?? '').replace(/\D/g, '');
+  if (d.length < 8 || d.length > 15) return null;
+  if (d.length === 12 && d.startsWith('91')) return `+91 ${d.slice(2, 7)} ${d.slice(7)}`;
+  if (d.length === 10) return `${d.slice(0, 5)} ${d.slice(5)}`;
+  if (d.length === 11 && d.startsWith('1')) return `+1 ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}`;
+  const cc = d.length > 10 ? d.slice(0, d.length - 10) : '';
+  const rest = d.slice(cc.length);
+  return (cc ? `+${cc} ` : '+') + rest.replace(/(\d{3,4})(?=\d{3})/g, '$1 ').trim();
+}

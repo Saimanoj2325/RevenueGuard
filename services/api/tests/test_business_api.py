@@ -421,6 +421,23 @@ async def test_whatsapp_chat_picker_mock_and_bridge_proxy(api, db, monkeypatch):
     assert live["mode"] == "live" and live["items"][0]["watched"] is True and live["items"][0]["last_message_at"].startswith("2025-10-09")
     assert (await api.put("/connectors/whatsapp/chats", {"watched": ["b@g.us"]})).json()["watched"] == ["b@g.us"]
     assert ("PUT", "/allowlist", {"jids": ["b@g.us"]}) in calls
+    # kinds, numbers and names come through; the raw JID is never used as a name
+    async def fake_bridge2(method, path, payload=None):
+        if path == "/chats":
+            return [
+                {"jid": "1@g.us", "name": "Traders", "is_group": True, "kind": "community", "members": 240, "last_message_at": 1760000300},
+                {"jid": "9@newsletter", "name": "GST Updates", "is_group": False, "last_message_at": 1760000200},
+                {"jid": "81234@lid", "name": None, "is_group": False, "kind": "person", "phone": "919876543204", "last_message_at": 1760000100},
+                {"jid": "status@broadcast", "name": "Status", "is_group": False, "last_message_at": 1760000050},
+            ]
+        return {"jids": []}
+
+    monkeypatch.setattr(cr, "_bridge", fake_bridge2)
+    items = {c["jid"]: c for c in (await api.get("/connectors/whatsapp/chats")).json()["items"]}
+    assert items["1@g.us"]["kind"] == "community" and items["1@g.us"]["members"] == 240 and items["1@g.us"]["is_group"] is True
+    assert items["9@newsletter"]["kind"] == "channel" and items["9@newsletter"]["is_group"] is False
+    assert items["81234@lid"]["name"] is None and items["81234@lid"]["phone"] == "919876543204"
+    assert "status@broadcast" not in items
 
 
 async def test_sheet_mapping_proposal_and_read_delivery(api, db):

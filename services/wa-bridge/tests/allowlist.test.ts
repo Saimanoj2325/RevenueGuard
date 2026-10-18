@@ -111,8 +111,8 @@ describe('chat allowlist (privacy gate)', () => {
     const r = await env.app.inject({ method: 'GET', url: '/chats', ...signedGet() })
     expect(r.statusCode).toBe(200)
     expect(r.json()).toEqual([
-      { jid: '919822223333@s.whatsapp.net', name: 'Cousin', is_group: false, last_message_at: 1_760_000_500 },
-      { jid: FAMILY, name: 'Family', is_group: true, last_message_at: 1_760_000_100 },
+      { jid: '919822223333@s.whatsapp.net', name: 'Cousin', is_group: false, kind: 'person', phone: '919822223333', last_message_at: 1_760_000_500 },
+      { jid: FAMILY, name: 'Family', is_group: true, kind: 'group', last_message_at: 1_760_000_100 },
     ])
     expect(r.body).not.toContain(SECRET_BODY)
   })
@@ -327,5 +327,50 @@ describe('WhatsApp approval replies', () => {
     expect(env.replies).toHaveLength(1)
     expect(env.mock.sent.at(-1)!.text).toContain('evidence changed')
     expect(env.store.getPendingApproval('919811112222')).toBeNull()
+  })
+})
+
+describe('chat picker: kinds, numbers and names', () => {
+  it('tells people, groups, communities, announcement groups and channels apart', async () => {
+    const env = makeEnv()
+    const h = env.bridge.hooks()
+    h.onChats!([
+      { jid: '120363111@g.us', name: 'Traders Association', is_group: true, kind: 'community', members: 240 },
+      { jid: '120363112@g.us', name: 'Traders Association', is_group: true, kind: 'announcement', parent: '120363111@g.us', members: 240 },
+      { jid: '120363113@g.us', name: 'Hyderabad dealers', is_group: true, kind: 'group', parent: '120363111@g.us', members: 31 },
+      { jid: '120363114@g.us', name: 'Dispatch', is_group: true, members: 8 },
+      { jid: '120363999@newsletter', name: 'GST Updates', kind: 'channel' },
+      { jid: 'status@broadcast', name: 'Status' },
+    ])
+    // a later plain update (no community flags) must not turn the community back into a group
+    h.onChats!([{ jid: '120363111@g.us', name: 'Traders Association', is_group: true }])
+    const rows = env.store.listChats()
+    const by = Object.fromEntries(rows.map((r) => [r.jid, r]))
+    expect(by['120363111@g.us']!.kind).toBe('community')
+    expect(by['120363112@g.us']).toMatchObject({ kind: 'announcement', parent_name: 'Traders Association' })
+    expect(by['120363113@g.us']).toMatchObject({ kind: 'group', members: 31, parent_name: 'Traders Association' })
+    expect(by['120363114@g.us']).toMatchObject({ kind: 'group', members: 8 })
+    expect(by['120363999@newsletter']).toMatchObject({ kind: 'channel', is_group: false, name: 'GST Updates' })
+    expect(by['status@broadcast']).toBeUndefined()
+  })
+
+  it('shows the real phone number for a LID chat and prefers the saved name over the profile name', async () => {
+    const env = makeEnv()
+    const h = env.bridge.hooks()
+    const LID = '81234567890123@lid'
+    await env.bridge.handleInbound(msg({ chat_id: LID, from: '919876543204@s.whatsapp.net', from_name: '~ Ramu', ts: 1_760_000_900 }))
+    let row = env.store.listChats().find((r) => r.jid === LID)!
+    expect(row).toMatchObject({ kind: 'person', phone: '919876543204', name: '~ Ramu' })
+    h.onContacts!([{ jid: '919876543204@s.whatsapp.net', name: 'Ramesh (Sri Lakshmi)' }])
+    row = env.store.listChats().find((r) => r.jid === LID)!
+    expect(row).toMatchObject({ name: 'Ramesh (Sri Lakshmi)', push_name: '~ Ramu', phone: '919876543204' })
+  })
+
+  it('a name that is only the number is dropped so the UI formats the number itself', async () => {
+    const env = makeEnv()
+    env.bridge.hooks().onChats!([{ jid: '919800000004@s.whatsapp.net', name: '+91 98000 00004' }])
+    const row = env.store.listChats().find((r) => r.jid === '919800000004@s.whatsapp.net')!
+    expect(row.name).toBeNull()
+    expect(row.phone).toBe('919800000004')
   })
 })

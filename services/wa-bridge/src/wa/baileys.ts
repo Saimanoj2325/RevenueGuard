@@ -21,7 +21,8 @@ import makeWASocket, {
   type WASocket,
 } from 'baileys'
 import { ConnectionStateMachine, backoffDelay } from '../state-machine.js'
-import type { ChatMeta, ConnState, ConnectorHooks, InboundMessage, Me, WaConnector } from './types.js'
+import { isHiddenJid, kindOfJid } from './types.js'
+import type { ChatMeta, ContactMeta, ConnState, ConnectorHooks, InboundMessage, Me, WaConnector } from './types.js'
 
 const PROTOCOL_REVOKE = proto.Message.ProtocolMessage.Type.REVOKE
 const PROTOCOL_MESSAGE_EDIT = proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
@@ -160,7 +161,7 @@ export class BaileysConnector implements WaConnector {
         // group subjects for the chat picker (names only)
         sock
           .groupFetchAllParticipating()
-          .then((groups) => this.emitChats(Object.values(groups).map((g) => ({ jid: g.id, name: g.subject ?? null, is_group: true }))))
+          .then((groups) => this.emitChats(Object.values(groups).map(groupMeta)))
           .catch((err) => this.log.warn({ err: (err as Error).message }, 'group list fetch failed'))
       }
       if (connection === 'close') {
@@ -196,10 +197,15 @@ export class BaileysConnector implements WaConnector {
     sock.ev.on('chats.update', (chats) => gen === this.generation && this.emitChats(chats.map(chatMeta)))
     sock.ev.on('contacts.upsert', (contacts) => gen === this.generation && this.emitContacts(contacts))
     sock.ev.on('contacts.update', (contacts) => gen === this.generation && this.emitContacts(contacts.filter((c): c is typeof c & { id: string } => !!c.id)))
-    sock.ev.on('groups.upsert', (groups) => gen === this.generation && this.emitChats(groups.map((g) => ({ jid: g.id, name: g.subject ?? null, is_group: true }))))
+    sock.ev.on('groups.upsert', (groups) => gen === this.generation && this.emitChats(groups.map(groupMeta)))
     sock.ev.on('groups.update', (groups) =>
-      gen === this.generation && this.emitChats(groups.filter((g) => g.id).map((g) => ({ jid: g.id!, name: g.subject ?? null, is_group: true }))),
+      gen === this.generation && this.emitChats(groups.filter((g): g is typeof g & { id: string } => !!g.id).map(groupMeta)),
     )
+    // LID <-> phone links, so LID-addressed 1:1 chats can show the real number instead of a LID
+    sock.ev.on('lid-mapping.update', (m) => {
+      if (gen !== this.generation || !m?.lid || !m?.pn) return
+      this.hooks.onContacts?.([{ jid: m.lid, phone_jid: m.pn }])
+    })
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       for (const m of messages) {
@@ -264,17 +270,22 @@ export class BaileysConnector implements WaConnector {
   }
 
   private emitChats(chats: ChatMeta[]): void {
-    const list = chats.filter((c) => c.jid && !isJidBroadcast(c.jid) && c.jid !== 'status@broadcast')
+    // status updates and broadcast lists are not conversations anyone can watch
+    const list = chats.filter((c) => c.jid && !isJidBroadcast(c.jid) && !isHiddenJid(c.jid))
     if (list.length) this.hooks.onChats?.(list)
   }
 
-  private emitContacts(contacts: { id: string; name?: string; notify?: string; verifiedName?: string; phoneNumber?: string }[]): void {
-    const out: { jid: string; name: string }[] = []
+  private emitContacts(contacts: { id: string; lid?: string; name?: string; notify?: string; verifiedName?: string; phoneNumber?: string }[]): void {
+    const out: ContactMeta[] = []
     for (const c of contacts) {
-      const name = c.name ?? c.notify ?? c.verifiedName
-      if (!name) continue
-      out.push({ jid: c.id, name })
-      if (c.phoneNumber && c.phoneNumber !== c.id) out.push({ jid: c.phoneNumber, name })
+      const name = c.name?.trim() || null
+      const push = (c.verifiedName ?? c.notify)?.trim() || null
+      const lid = c.lid ?? (c.id?.endsWith('@lid') ? c.id : undefined)
+      const pn = c.phoneNumber ?? (c.id?.endsWith('@s.whatsapp.net') ? c.id : undefined)
+      if (!name && !push && !(lid && pn)) continue
+      if (c.id) out.push({ jid: c.id, name, push, phone_jid: c.id === lid ? (pn ?? null) : null })
+      if (pn && pn !== c.id) out.push({ jid: pn, name, push })
+      if (lid && lid !== c.id) out.push({ jid: lid, name, push, phone_jid: pn ?? null })
     }
     if (out.length) this.hooks.onContacts?.(out)
   }
@@ -404,7 +415,17 @@ function chatMeta(c: { id?: string | null; name?: string | null; conversationTim
   if (!c.id) return { jid: '' } // filtered out by emitChats
   const raw = c.lastMessageRecvTimestamp ?? c.conversationTimestamp
   const ts = raw == null ? null : Number(String(raw))
-  return { jid: c.id, name: c.name ?? null, is_group: !!isJidGroup(c.id), last_message_at: ts && Number.isFinite(ts) ? ts : null }
+  const kind = kindOfJid(c.id)
+  // a 1:1 chat's `name` is the saved contact name; groups and channels carry their title
+  return { jid: c.id, name: c.name ?? null, is_group: !!isJidGroup(c.id), kind: kind === 'group' ? undefined : kind, last_message_at: ts && Number.isFinite(ts) ? ts : null }
+}
+
+/** Group metadata -> picker row. Tells communities and their announcement groups apart from ordinary groups. */
+function groupMeta(g: { id: string; subject?: string | null; isCommunity?: boolean; isCommunityAnnounce?: boolean; linkedParent?: string; size?: number; participants?: unknown[] }): ChatMeta {
+  const known = g.isCommunity !== undefined || g.isCommunityAnnounce !== undefined || g.linkedParent !== undefined
+  const kind = g.isCommunity ? 'community' : g.isCommunityAnnounce ? 'announcement' : known ? 'group' : undefined
+  const members = g.size ?? (Array.isArray(g.participants) && g.participants.length ? g.participants.length : undefined)
+  return { jid: g.id, name: g.subject ?? null, is_group: true, ...(kind ? { kind } : {}), ...(members ? { members } : {}), ...(g.linkedParent ? { parent: g.linkedParent } : {}) }
 }
 
 function extFor(mime: string): string {

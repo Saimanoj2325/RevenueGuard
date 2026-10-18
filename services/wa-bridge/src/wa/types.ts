@@ -63,12 +63,32 @@ export interface WaConnector {
   sendText(jid: string, text: string): Promise<{ messageId: string }>
 }
 
+/** What a chat is, as WhatsApp shows it. */
+export type ChatKind = 'person' | 'group' | 'community' | 'announcement' | 'channel' | 'broadcast'
+
 /** Chat-picker metadata. Never carries message bodies. */
 export interface ChatMeta {
   jid: string
   name?: string | null
   is_group?: boolean
+  /** person | group | community (parent) | announcement (community's announcement group) | channel | broadcast list */
+  kind?: ChatKind
+  /** participant count for groups / communities */
+  members?: number | null
+  /** for a group inside a community: the community's JID */
+  parent?: string | null
   last_message_at?: number | null
+}
+
+/** Contact metadata: saved name (from the phone's address book), WhatsApp profile/verified name, and LID <-> phone link. */
+export interface ContactMeta {
+  jid: string
+  /** name saved in the phone's contacts */
+  name?: string | null
+  /** WhatsApp profile name ("push name") or verified business name */
+  push?: string | null
+  /** phone JID when `jid` is a LID */
+  phone_jid?: string | null
 }
 
 /** What the connector knows about an inbound message BEFORE parsing/downloading it (allowlist gate). */
@@ -95,11 +115,26 @@ export interface ConnectorHooks {
   admit?(env: InboundEnvelope): boolean
   /** Chat / contact / group names from the WhatsApp session for the chat picker. */
   onChats?(chats: ChatMeta[]): void
-  onContacts?(contacts: { jid: string; name: string }[]): void
+  onContacts?(contacts: ContactMeta[]): void
 }
 
 export function isGroupJid(jid: string): boolean {
   return jid.endsWith('@g.us')
+}
+
+/** Kind from the JID alone. Communities / announcement groups are @g.us too and need group metadata to tell apart. */
+export function kindOfJid(jid: string): ChatKind {
+  const t = jid.trim().toLowerCase()
+  if (t.endsWith('@g.us')) return 'group'
+  if (t.endsWith('@newsletter')) return 'channel'
+  if (t.endsWith('@broadcast')) return 'broadcast'
+  return 'person'
+}
+
+/** True for chats that are not a real conversation (status updates). */
+export function isHiddenJid(jid: string): boolean {
+  const t = jid.trim().toLowerCase()
+  return t === 'status@broadcast' || t === '0@s.whatsapp.net'
 }
 
 /** Canonical JID: lowercase, no device suffix ("91..:12@s.whatsapp.net" -> "91..@s.whatsapp.net"); bare numbers -> user JID. */

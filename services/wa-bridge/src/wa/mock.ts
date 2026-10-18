@@ -64,6 +64,9 @@ export class MockConnector implements WaConnector {
       { jid: '120363000000000001@g.us', name: 'Dispatch & Ops', is_group: true, last_message_at: now - 300 },
       { jid: '919800000002@s.whatsapp.net', name: 'Ops Team', is_group: false, last_message_at: now - 900 },
       { jid: '120363000000000002@g.us', name: 'Family', is_group: true, last_message_at: now - 3600 },
+      { jid: '120363000000000010@g.us', name: 'Hyderabad Traders Association', is_group: true, kind: 'community', members: 240, last_message_at: now - 7200 },
+      { jid: '120363000000000011@g.us', name: 'Hyderabad Traders Association', is_group: true, kind: 'announcement', parent: '120363000000000010@g.us', members: 240, last_message_at: now - 7200 },
+      { jid: '120363000000000012@newsletter', name: 'GST Council Updates', kind: 'channel', last_message_at: now - 10800 },
     ])
     return true
   }

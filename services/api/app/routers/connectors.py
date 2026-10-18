@@ -248,13 +248,63 @@ async def sheets_propose_mapping(body: ProposeMappingIn, user: User = Depends(re
 
 # ------------------------------------------------------------------ WhatsApp chat picker (allowlist)
 DEMO_CHATS = [
-    {"jid": "120363000000000001@g.us", "name": "Dispatch & Ops", "is_group": True, "watched": True},
-    {"jid": "919800000001@s.whatsapp.net", "name": "Ravi Kumar (Example Customer)", "is_group": False, "watched": True},
-    {"jid": "120363000000000002@g.us", "name": "Sales team", "is_group": True, "watched": True},
-    {"jid": "120363000000000004@g.us", "name": "Godown Hyderabad", "is_group": True, "watched": False},
-    {"jid": "919811100003@s.whatsapp.net", "name": "Sri Lakshmi Traders accounts", "is_group": False, "watched": False},
-    {"jid": "120363000000000009@g.us", "name": "Family", "is_group": True, "watched": False},
+    {"jid": "120363000000000001@g.us", "name": "Dispatch & Ops", "is_group": True, "kind": "group", "members": 8, "watched": True},
+    {"jid": "919800000001@s.whatsapp.net", "name": "Ravi Kumar (Example Customer)", "is_group": False, "kind": "person", "phone": "919800000001", "watched": True},
+    {"jid": "120363000000000002@g.us", "name": "Sales team", "is_group": True, "kind": "group", "members": 5, "watched": True},
+    {"jid": "120363000000000004@g.us", "name": "Godown Hyderabad", "is_group": True, "kind": "group", "members": 12, "watched": False},
+    {"jid": "919811100003@s.whatsapp.net", "name": "Sri Lakshmi Traders accounts", "is_group": False, "kind": "person", "phone": "919811100003", "watched": False},
+    {"jid": "919876543204@s.whatsapp.net", "name": None, "is_group": False, "kind": "person", "phone": "919876543204", "watched": False},
+    {"jid": "120363000000000010@g.us", "name": "Hyderabad Traders Association", "is_group": True, "kind": "community", "members": 240, "watched": False},
+    {"jid": "120363000000000011@g.us", "name": "Hyderabad Traders Association", "is_group": True, "kind": "announcement", "members": 240,
+     "parent": "120363000000000010@g.us", "parent_name": "Hyderabad Traders Association", "watched": False},
+    {"jid": "120363000000000012@newsletter", "name": "GST Council Updates", "is_group": False, "kind": "channel", "watched": False},
+    {"jid": "120363000000000009@g.us", "name": "Family", "is_group": True, "kind": "group", "members": 9, "watched": False},
 ]
+CHAT_KINDS = {"person", "group", "community", "announcement", "channel", "broadcast"}
+
+
+def _chat_kind(ch: dict) -> str:
+    k = ch.get("kind")
+    if k in CHAT_KINDS:
+        return k
+    jid = str(ch.get("jid") or "")
+    if jid.endswith("@newsletter"):
+        return "channel"
+    if jid.endswith("@broadcast"):
+        return "broadcast"
+    return "group" if jid.endswith("@g.us") or ch.get("is_group") else "person"
+
+
+def _phone_digits(ch: dict) -> str | None:
+    p = ch.get("phone")
+    if not p:
+        jid = str(ch.get("jid") or "")
+        p = jid.split("@")[0].split(":")[0] if jid.endswith("@s.whatsapp.net") else None
+    digits = "".join(c for c in str(p or "") if c.isdigit())
+    return digits if 8 <= len(digits) <= 15 else None
+
+
+def _chat_row(ch: dict, ts, watched: bool) -> dict:
+    kind = _chat_kind(ch)
+    row = {
+        "jid": ch.get("jid"),
+        # never fall back to the raw JID: the UI formats the phone number (or says the number is hidden)
+        "name": ch.get("name") or None,
+        "is_group": kind in ("group", "community", "announcement"),
+        "kind": kind,
+        "last_message_at": ts,
+        "watched": watched,
+    }
+    if kind == "person":
+        row["phone"] = _phone_digits(ch)
+        if ch.get("push_name"):
+            row["push_name"] = ch["push_name"]
+    for k in ("members", "parent", "parent_name"):
+        if ch.get(k):
+            row[k] = ch[k]
+    return row
+
+
 ALLOWLIST_FLAG = "wa_allowlist"
 
 
@@ -291,7 +341,7 @@ async def whatsapp_chats(user: User = Depends(current_user), session: AsyncSessi
         items = []
         for i, ch in enumerate(DEMO_CHATS):
             ts = last.get(ch["jid"]) or (now - timedelta(hours=2 + 7 * i))
-            items.append({**ch, "last_message_at": ts.isoformat(), "watched": (ch["jid"] in allow) if allow is not None else ch["watched"]})
+            items.append(_chat_row(ch, ts.isoformat(), (ch["jid"] in allow) if allow is not None else ch["watched"]))
         return {"items": items, "mode": "mock"}
     try:
         chats = await _bridge("GET", "/chats")
@@ -305,7 +355,9 @@ async def whatsapp_chats(user: User = Depends(current_user), session: AsyncSessi
         ts = ch.get("last_message_at")
         if isinstance(ts, (int, float)):
             ts = datetime.fromtimestamp(ts / (1000 if ts > 1e12 else 1), tz=timezone.utc).isoformat()
-        items.append({"jid": ch.get("jid"), "name": ch.get("name") or ch.get("jid"), "is_group": bool(ch.get("is_group")), "last_message_at": ts, "watched": ch.get("jid") in allow})
+        if str(ch.get("jid") or "") == "status@broadcast":
+            continue
+        items.append(_chat_row(ch, ts, ch.get("jid") in allow))
     return {"items": items, "mode": "live"}
 
 
