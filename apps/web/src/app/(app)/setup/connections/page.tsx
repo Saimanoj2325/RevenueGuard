@@ -93,6 +93,11 @@ export default function ConnectionsPage() {
   const all = useMemo(() => linked.filter((c) => showHidden || !isFaceless(c) || sel?.has(c.jid)), [linked, showHidden, sel]);
   const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, all.filter((c) => inFilter(c, f.key, sel ?? new Set())).length])) as Record<ChatFilter, number>, [all, sel]);
   const rows = useMemo(() => sortChats(all.filter((c) => inFilter(c, kind, pinned) && matchesSearch(c, s)), pinned), [all, kind, s, pinned]);
+  // long lists render a page at a time; the Save bar is sticky, so it never needs a scroll to reach
+  const PAGE = 50;
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [kind, s, showHidden]);
+  const shown = rows.slice(0, limit);
   const dirty = !!sel && !!chats.data && chats.data.some((c) => c.watched !== sel.has(c.jid));
 
   async function reconnect(name: string) {
@@ -138,7 +143,7 @@ export default function ConnectionsPage() {
             {wa?.status !== 'connected' ? <EmptyState title="WhatsApp is not linked yet." hint="Link it with a QR code. Nothing is read until you tick chats here." action={<button className="btn" onClick={() => setQr(true)}>Link WhatsApp</button>} />
               : !chats.data ? <Skeleton lines={5} className="p-3" />
               : rows.length === 0 ? <EmptyState title={kind === 'selected' ? 'No chats selected yet.' : 'No chats match.'} />
-              : rows.map((c, i) => {
+              : shown.map((c, i) => {
                 const on = sel?.has(c.jid) ?? false;
                 const k = chatKind(c);
                 const KIcon = KIND_ICON[k];
@@ -155,14 +160,19 @@ export default function ConnectionsPage() {
                   </label>
                 );
               })}
+            {rows.length > shown.length && (
+              <button className="w-full border-t border-rule px-4 py-2.5 text-center text-[13px] font-semibold text-ink-2 hover:bg-[#FBF9F3]" onClick={() => setLimit((l) => l + PAGE)}>
+                Show {Math.min(PAGE, rows.length - shown.length)} more <span className="font-normal text-ink-3">({rows.length - shown.length} left · or search by name or number)</span>
+              </button>
+            )}
             {waOn && hiddenCount > 0 && (
               <button className="w-full border-t border-rule px-4 py-2.5 text-left text-[12.5px] text-ink-3 hover:bg-[#FBF9F3]" onClick={() => setShowHidden((v) => !v)}>
                 {showHidden ? 'Hide' : 'Show'} {hiddenCount} {hiddenCount === 1 ? 'chat' : 'chats'} where WhatsApp has not shared the number yet. They fill in as those people message you.
               </button>
             )}
             {wa?.status === 'connected' && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule px-4 py-3">
-                <span className={clsx('text-[12.5px]', msg?.tone === 'red' ? 'text-red' : msg ? 'text-green' : 'text-ink-3')}>{msg?.text ?? (user?.role === 'admin' ? 'Changes apply when you save.' : 'Only the owner can change which chats are watched.')}</span>
+              <div className={clsx('sticky bottom-16 z-20 flex flex-wrap items-center justify-between gap-2 rounded-b border-t border-rule bg-card px-4 py-3 sm:bottom-0', dirty && 'shadow-[0_-6px_16px_-8px_rgba(0,0,0,0.18)]')}>
+                <span className={clsx('text-[12.5px]', msg?.tone === 'red' ? 'text-red' : msg ? 'text-green' : dirty ? 'text-ink' : 'text-ink-3')}>{msg?.text ?? (user?.role !== 'admin' ? 'Only the owner can change which chats are watched.' : dirty ? `${sel?.size ?? 0} selected · unsaved changes` : 'Changes apply when you save.')}</span>
                 <button className="btn" disabled={!dirty || busy || user?.role !== 'admin'} onClick={save}>Save chat list</button>
               </div>
             )}
