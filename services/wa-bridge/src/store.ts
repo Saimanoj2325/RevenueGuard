@@ -255,7 +255,7 @@ export class Store {
       jid: string; chat_name: string | null; is_group: number; kind: string | null; members: number | null; parent: string | null
       last_message_at: number | null; saved_name: string | null; push_name: string | null; pn: string | null; parent_name: string | null
     }[]
-    return rows.map((r) => {
+    const mapped = rows.map((r) => {
       const kind = (r.kind as ChatKind | null) ?? kindOfJid(r.jid)
       const person = kind === 'person'
       const phone = person && r.pn ? phoneOf(r.pn) : null
@@ -274,6 +274,18 @@ export class Store {
       if (r.parent) { row.parent = r.parent; if (r.parent_name) row.parent_name = r.parent_name }
       return row
     })
+    return mergeSamePerson(mapped)
+  }
+
+  /** Phone JID for a LID, if known. */
+  pnForLid(lid: string): string | null {
+    const r = this.db.prepare('SELECT pn FROM lid_map WHERE lid = ?').get(lid) as { pn: string } | undefined
+    return r?.pn ?? null
+  }
+
+  /** LIDs known for a phone JID. */
+  lidsForPn(pn: string): string[] {
+    return (this.db.prepare('SELECT lid FROM lid_map WHERE pn = ?').all(pn) as { lid: string }[]).map((r) => r.lid)
   }
 
   // ---------- pending approval prompts ----------
@@ -475,6 +487,8 @@ export interface ChatRow {
   members?: number
   parent?: string
   parent_name?: string
+  /** other JIDs of the same person (a LID chat merged into its phone-number chat) */
+  aliases?: string[]
 }
 
 /** "+91 98765 43210" or "919876543210" as a name adds nothing over the phone column. */
@@ -482,4 +496,31 @@ function isJustNumber(name: string, phone: string | null): boolean {
   const digits = name.replace(/[\s+\-().]/g, '')
   if (!/^\d{6,15}$/.test(digits)) return false
   return !phone || phone.endsWith(digits) || digits.endsWith(phone)
+}
+
+/**
+ * WhatsApp can keep one person as two chats: the old phone-number chat and a newer LID (privacy ID) chat.
+ * Once both resolve to the same number they are one row: the phone JID is kept, the LID goes in `aliases`.
+ */
+export function mergeSamePerson(rows: ChatRow[]): ChatRow[] {
+  const out: ChatRow[] = []
+  const byPhone = new Map<string, ChatRow>()
+  for (const r of rows) {
+    if (r.kind !== 'person' || !r.phone) { out.push(r); continue }
+    const prev = byPhone.get(r.phone)
+    if (!prev) { byPhone.set(r.phone, r); out.push(r); continue }
+    const keepNew = r.jid.endsWith('@s.whatsapp.net') && !prev.jid.endsWith('@s.whatsapp.net')
+    const [keep, drop] = keepNew ? [r, prev] : [prev, r]
+    const merged: ChatRow = {
+      ...drop, ...keep,
+      name: keep.name ?? drop.name,
+      push_name: keep.push_name ?? drop.push_name,
+      last_message_at: Math.max(keep.last_message_at ?? 0, drop.last_message_at ?? 0) || null,
+      aliases: [...new Set([...(keep.aliases ?? []), drop.jid, ...(drop.aliases ?? [])])],
+    }
+    if (!merged.push_name || merged.push_name === merged.name) delete merged.push_name
+    byPhone.set(r.phone, merged)
+    out[out.indexOf(prev)] = merged
+  }
+  return out.sort((a, b) => (b.last_message_at ?? 0) - (a.last_message_at ?? 0))
 }

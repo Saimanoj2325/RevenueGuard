@@ -81,12 +81,19 @@ export class Bridge {
       return false
     }
     if (this.allowed.has(c)) return true
-    if (isGroupJid(c) || !alt) return false
+    if (isGroupJid(c)) return false
+    // same person under their other JID: LID <-> phone number (from the message itself, or the stored link)
     try {
-      return this.allowed.has(normalizeJid(alt))
+      if (alt && this.allowed.has(normalizeJid(alt))) return true
+      if (c.endsWith('@lid')) {
+        const pn = this.store.pnForLid(c)
+        return !!pn && this.allowed.has(pn)
+      }
+      if (c.endsWith('@s.whatsapp.net')) return this.store.lidsForPn(c).some((l) => this.allowed.has(l))
     } catch {
-      return false
+      /* fall through */
     }
+    return false
   }
 
   /** Privacy gate: record picker metadata (name + time only), then allow or drop. Never sees message content. */

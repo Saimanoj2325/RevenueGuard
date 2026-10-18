@@ -390,7 +390,9 @@ async def whatsapp_chats(user: User = Depends(current_user), session: AsyncSessi
             ts = datetime.fromtimestamp(ts / (1000 if ts > 1e12 else 1), tz=timezone.utc).isoformat()
         if str(ch.get("jid") or "") == "status@broadcast":
             continue
-        items.append(_chat_row(ch, ts, ch.get("jid") in allow))
+        # a person merged from a phone-number chat and a LID chat is watched if either JID is
+        watched = ch.get("jid") in allow or any(a in allow for a in (ch.get("aliases") or []))
+        items.append(_chat_row(ch, ts, watched))
     return {"items": items, "mode": "live"}
 
 

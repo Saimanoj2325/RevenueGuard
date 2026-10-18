@@ -429,8 +429,10 @@ async def test_whatsapp_chat_picker_mock_and_bridge_proxy(api, db, monkeypatch):
                 {"jid": "9@newsletter", "name": "GST Updates", "is_group": False, "last_message_at": 1760000200},
                 {"jid": "81234@lid", "name": None, "is_group": False, "kind": "person", "phone": "919876543204", "last_message_at": 1760000100},
                 {"jid": "status@broadcast", "name": "Status", "is_group": False, "last_message_at": 1760000050},
+                {"jid": "919834149243@s.whatsapp.net", "name": "Mom", "is_group": False, "kind": "person", "phone": "919834149243",
+                 "aliases": ["555@lid"], "last_message_at": 1760000040},
             ]
-        return {"jids": []}
+        return {"jids": ["555@lid"]}
 
     monkeypatch.setattr(cr, "_bridge", fake_bridge2)
     items = {c["jid"]: c for c in (await api.get("/connectors/whatsapp/chats")).json()["items"]}
@@ -438,6 +440,7 @@ async def test_whatsapp_chat_picker_mock_and_bridge_proxy(api, db, monkeypatch):
     assert items["9@newsletter"]["kind"] == "channel" and items["9@newsletter"]["is_group"] is False
     assert items["81234@lid"]["name"] is None and items["81234@lid"]["phone"] == "919876543204"
     assert "status@broadcast" not in items
+    assert items["919834149243@s.whatsapp.net"]["watched"] is True
 
     # stored status drifted: bridge says it's paired -> connector flips to connected; bridge says QR -> no stale chats
     from app.connectors import whatsapp as wa_mod
