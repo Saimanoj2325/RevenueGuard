@@ -12,6 +12,17 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_MOCK: process.env.NEXT_PUBLIC_MOCK ?? 'false',
   },
+  ...(isStatic ? {} : {
+    async rewrites() {
+      const backend = process.env.INTERNAL_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'http://api:8000');
+      return [
+        {
+          source: '/api-backend/:path*',
+          destination: `${backend}/:path*`,
+        },
+      ];
+    },
+  }),
 };
 
 export default nextConfig;

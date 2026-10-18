@@ -9,7 +9,7 @@ RUN npm ci --no-audit --no-fund
 
 FROM node:22-alpine AS build
 WORKDIR /app
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_API_URL=
 ARG NEXT_PUBLIC_WS_URL=
 ARG NEXT_PUBLIC_MOCK=false
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
