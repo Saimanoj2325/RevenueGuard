@@ -27,12 +27,12 @@ GOOGLE_SCOPES = [
 GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 
-def google_auth_url(state: str) -> str:
+def google_auth_url(state: str, redirect_uri: str | None = None) -> str:
     s = get_settings()
     return GOOGLE_AUTH_URL + "?" + urlencode(
         {
             "client_id": s.google_client_id,
-            "redirect_uri": s.google_redirect_uri,
+            "redirect_uri": redirect_uri or s.google_redirect_uri,
             "response_type": "code",
             "scope": " ".join(GOOGLE_SCOPES),
             "access_type": "offline",
@@ -43,12 +43,12 @@ def google_auth_url(state: str) -> str:
     )
 
 
-async def google_exchange_code(code: str) -> dict[str, Any]:
+async def google_exchange_code(code: str, redirect_uri: str | None = None) -> dict[str, Any]:
     s = get_settings()
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.post(
             GOOGLE_TOKEN_URL,
-            data={"code": code, "client_id": s.google_client_id, "client_secret": s.google_client_secret, "redirect_uri": s.google_redirect_uri, "grant_type": "authorization_code"},
+            data={"code": code, "client_id": s.google_client_id, "client_secret": s.google_client_secret, "redirect_uri": redirect_uri or s.google_redirect_uri, "grant_type": "authorization_code"},
         )
         r.raise_for_status()
         tok = r.json()

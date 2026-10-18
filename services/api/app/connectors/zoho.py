@@ -16,18 +16,18 @@ from .base import ConnectorTimeout, ConnectorUnavailable, NotConnected, ZohoAdap
 ZOHO_SCOPES = "ZohoBooks.contacts.READ,ZohoBooks.salesorders.READ,ZohoBooks.invoices.READ,ZohoBooks.invoices.CREATE,ZohoBooks.creditnotes.READ,ZohoBooks.customerpayments.READ,ZohoBooks.settings.READ"
 
 
-def zoho_auth_url(state: str) -> str:
+def zoho_auth_url(state: str, redirect_uri: str | None = None) -> str:
     s = get_settings()
     return f"{s.zoho_accounts_url}/oauth/v2/auth?" + urlencode(
-        {"scope": ZOHO_SCOPES, "client_id": s.zoho_client_id, "response_type": "code", "redirect_uri": s.zoho_redirect_uri, "access_type": "offline", "prompt": "consent", "state": state}
+        {"scope": ZOHO_SCOPES, "client_id": s.zoho_client_id, "response_type": "code", "redirect_uri": redirect_uri or s.zoho_redirect_uri, "access_type": "offline", "prompt": "consent", "state": state}
     )
 
 
-async def zoho_exchange_code(code: str, accounts_server: str | None = None) -> dict[str, Any]:
+async def zoho_exchange_code(code: str, accounts_server: str | None = None, redirect_uri: str | None = None) -> dict[str, Any]:
     s = get_settings()
     base = accounts_server or s.zoho_accounts_url
     async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.post(f"{base}/oauth/v2/token", params={"code": code, "client_id": s.zoho_client_id, "client_secret": s.zoho_client_secret, "redirect_uri": s.zoho_redirect_uri, "grant_type": "authorization_code"})
+        r = await c.post(f"{base}/oauth/v2/token", params={"code": code, "client_id": s.zoho_client_id, "client_secret": s.zoho_client_secret, "redirect_uri": redirect_uri or s.zoho_redirect_uri, "grant_type": "authorization_code"})
         r.raise_for_status()
         tok = r.json()
     if "error" in tok:

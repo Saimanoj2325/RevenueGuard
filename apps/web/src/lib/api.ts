@@ -169,6 +169,7 @@ export const api = {
   connectorsV2: async () => list<V.ConnectorV2>(await request('GET', '/connectors')),
   waChats: async () => list<V.WaChat>(await request('GET', '/connectors/whatsapp/chats')),
   setWaChats: (watched: string[]) => request<any>('PUT', '/connectors/whatsapp/chats', { watched }),
+  oauthUrls: () => request<{ google: string; zoho: string; web: string }>('GET', '/connectors/oauth-urls'),
   proposeMapping: (sheet_id: string, tab: string) => request<{ columns: V.SheetColumn[]; rows?: number; title?: string }>('POST', '/connectors/sheets/propose-mapping', { sheet_id, tab }),
   saveSheetConfig: (spreadsheet_id: string, range: string, mapping: Record<string, string>) => request<any>('POST', '/connectors/sheets/config', { spreadsheet_id, range, mapping }),
   startBackfill: (days = 90) => request<{ job_id: string }>('POST', '/setup/backfill', { days }),

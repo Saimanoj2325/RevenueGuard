@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 import jwt
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from ..db import get_session, utcnow
 from ..deps import current_user, require_role
 from ..events import emit
 from ..models import User
+from ..public_url import oauth_urls
 from ..security import encrypt_json, sign_state, verify_state
 
 _log = logging.getLogger(__name__)
@@ -73,15 +74,35 @@ async def _mock_connect(session, user: User, names: list[str]):
         await emit(user.tenant_id, "connector.updated", name=n, status="connected")
 
 
+def _state_or_none(state: str | None) -> dict | None:
+    if not state:
+        return None
+    try:
+        return verify_state(state)
+    except jwt.PyJWTError:
+        return None
+
+
+@router.get("/oauth-urls")
+async def oauth_redirect_urls(request: Request, user: User = Depends(require_role("admin"))):
+    """The redirect URIs this exact URL will use, to paste into Google Cloud / Zoho API Console."""
+    g, wb = oauth_urls(request, "google")
+    z, _ = oauth_urls(request, "zoho")
+    return {"google": g, "zoho": z, "web": wb}
+
+
 @router.get("/google/start")
-async def google_start(user: User = Depends(require_role("admin")), session: AsyncSession = Depends(get_session)):
+async def google_start(request: Request, user: User = Depends(require_role("admin")), session: AsyncSession = Depends(get_session)):
     s = get_settings()
     if s.demo_mode and not s.google_client_id:
         await _mock_connect(session, user, ["gmail", "sheets", "drive"])
         return RedirectResponse(f"{s.web_url}/connectors?connected=google&mode=mock")
     from ..connectors.google import google_auth_url
 
-    return RedirectResponse(google_auth_url(sign_state({"tid": user.tenant_id, "uid": user.id, "email": user.email, "provider": "google"})))
+    ru, wb = oauth_urls(request, "google")
+    _log.info("google sign-in: redirect_uri=%s", ru)
+    st = sign_state({"tid": user.tenant_id, "uid": user.id, "email": user.email, "provider": "google", "ru": ru, "wb": wb})
+    return RedirectResponse(google_auth_url(st, ru))
 
 
 @router.get("/google/callback")
@@ -98,7 +119,9 @@ async def google_callback(
 
     from ..connectors.google import google_exchange_code
 
-    back = f"{get_settings().web_url}/setup/connections"
+    st = _state_or_none(state)
+    ru = (st or {}).get("ru") or get_settings().google_redirect_uri
+    back = f"{(st or {}).get('wb') or get_settings().web_url.rstrip('/')}/setup/connections"
 
     def fail(reason: str) -> RedirectResponse:
         return RedirectResponse(f"{back}?google_error={quote(reason)}")
@@ -107,12 +130,10 @@ async def google_callback(
         return fail("You cancelled the Google sign-in." if error == "access_denied" else f"Google said: {error}")
     if not code or not state:
         return fail("Google did not send a sign-in code. Start again from Connect Gmail.")
-    try:
-        st = verify_state(state)
-    except jwt.PyJWTError:
+    if st is None:
         return fail("That sign-in link expired. Start again from Connect Gmail.")
     try:
-        tok = await google_exchange_code(code)
+        tok = await google_exchange_code(code, ru)
     except httpx.HTTPStatusError as e:
         try:
             body = e.response.json()
@@ -123,7 +144,7 @@ async def google_callback(
         if err == "invalid_grant":
             return fail("This sign-in code was already used or expired (did the page get refreshed?). Start again from Connect Gmail.")
         if err == "redirect_uri_mismatch":
-            return fail(f"GOOGLE_REDIRECT_URI ({get_settings().google_redirect_uri}) is not listed in your Google Cloud OAuth client.")
+            return fail(f"Add {ru} to Authorised redirect URIs in your Google Cloud OAuth client, then try again.")
         if err in ("invalid_client", "unauthorized_client"):
             return fail("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are wrong in .env.")
         return fail(f"Google refused the sign-in: {err or e.response.status_code}")
@@ -144,30 +165,71 @@ async def google_callback(
 
 
 @router.get("/zoho/start")
-async def zoho_start(user: User = Depends(require_role("admin")), session: AsyncSession = Depends(get_session)):
+async def zoho_start(request: Request, user: User = Depends(require_role("admin")), session: AsyncSession = Depends(get_session)):
     s = get_settings()
     if s.demo_mode and not s.zoho_client_id:
         await _mock_connect(session, user, ["zoho"])
         return RedirectResponse(f"{s.web_url}/connectors?connected=zoho&mode=mock")
     from ..connectors.zoho import zoho_auth_url
 
-    return RedirectResponse(zoho_auth_url(sign_state({"tid": user.tenant_id, "uid": user.id, "email": user.email, "provider": "zoho"})))
+    ru, wb = oauth_urls(request, "zoho")
+    _log.info("zoho sign-in: redirect_uri=%s", ru)
+    st = sign_state({"tid": user.tenant_id, "uid": user.id, "email": user.email, "provider": "zoho", "ru": ru, "wb": wb})
+    return RedirectResponse(zoho_auth_url(st, ru))
 
 
 @router.get("/zoho/callback")
-async def zoho_callback(code: str = Query(...), state: str = Query(...), accounts_server: str | None = Query(default=None, alias="accounts-server"), session: AsyncSession = Depends(get_session)):
+async def zoho_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    accounts_server: str | None = Query(default=None, alias="accounts-server"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Zoho sends the browser here after consent. Failures go back to the app with a plain reason."""
+    from urllib.parse import quote
+
+    import httpx
+
     from ..connectors.zoho import zoho_exchange_code, zoho_list_orgs
 
-    try:
-        st = verify_state(state)
-    except jwt.PyJWTError as e:
-        raise HTTPException(400, f"bad state: {e}") from e
+    st = _state_or_none(state)
+    ru = (st or {}).get("ru") or get_settings().zoho_redirect_uri
+    back = f"{(st or {}).get('wb') or get_settings().web_url.rstrip('/')}/setup/connections"
+
+    def fail(reason: str) -> RedirectResponse:
+        return RedirectResponse(f"{back}?zoho_error={quote(reason)}")
+
+    if error:
+        return fail("You cancelled the Zoho sign-in." if error == "access_denied" else f"Zoho said: {error}")
+    if not code or not state:
+        return fail("Zoho did not send a sign-in code. Start again from Connect Zoho.")
+    if st is None:
+        return fail("That sign-in link expired. Start again from Connect Zoho.")
     if accounts_server and not accounts_server.startswith("https://accounts.zoho."):
-        raise HTTPException(400, "unexpected accounts-server")
-    tok = await zoho_exchange_code(code, accounts_server)
+        return fail("Zoho sent an unexpected accounts server. Start again from Connect Zoho.")
+    try:
+        tok = await zoho_exchange_code(code, accounts_server, ru)
+    except ValueError as e:  # Zoho answers 200 with {"error": ...}
+        _log.warning("zoho token exchange failed: %s", e)
+        err = str(e)
+        if err == "invalid_code":
+            return fail("This sign-in code was already used or expired (did the page get refreshed?). Start again from Connect Zoho.")
+        if err == "invalid_redirect_uri":
+            return fail(f"Add {ru} as an Authorized Redirect URI in your Zoho API Console client, then try again.")
+        if err == "invalid_client":
+            return fail("ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET are wrong in .env (or the client is in another Zoho data centre).")
+        return fail(f"Zoho refused the sign-in: {err}")
+    except httpx.HTTPError as e:
+        _log.warning("zoho token exchange error: %s", e)
+        return fail("Could not reach Zoho from the server. Check its internet connection and try again.")
     org_id = get_settings().zoho_org_id
     if not org_id:
-        orgs = await zoho_list_orgs(tok["access_token"])
+        try:
+            orgs = await zoho_list_orgs(tok["access_token"])
+        except httpx.HTTPError as e:
+            _log.warning("zoho org list failed: %s", e)
+            orgs = []
         org_id = orgs[0]["organization_id"] if orgs else ""
     c = await get_connector(session, st["tid"], "zoho")
     c.status, c.mode, c.auth_enc, c.authorized_by, c.authorized_at, c.error = "connected", "live", encrypt_json(tok), st["email"], utcnow(), None
@@ -175,7 +237,7 @@ async def zoho_callback(code: str = Query(...), state: str = Query(...), account
     await append_audit(session, st["tid"], "connector.connected", st["email"], {"name": "zoho", "mode": "live", "organization_id": org_id})
     await session.commit()
     await emit(st["tid"], "connector.updated", name="zoho", status="connected")
-    return RedirectResponse(f"{get_settings().web_url}/connectors?connected=zoho")
+    return RedirectResponse(f"{back}?connected=zoho")
 
 
 @router.get("/whatsapp/qr")

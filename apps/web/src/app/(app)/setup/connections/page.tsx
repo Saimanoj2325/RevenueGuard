@@ -65,6 +65,9 @@ export default function ConnectionsPage() {
   const t = useT();
   const user = useAuth((s) => s.user);
   const q = useLive(() => api.connectorsV2(), [], (e) => e.type === 'connector.updated', 200);
+  // redirect URIs for the URL this page is open on, to paste into Google Cloud / Zoho API Console
+  const [oauthUrls, setOauthUrls] = useState<{ google: string; zoho: string } | null>(null);
+  useEffect(() => { if (user?.role === 'admin' && !isDemo()) api.oauthUrls().then(setOauthUrls).catch(() => {}); }, [user?.role]);
   const chats = useLive(() => api.waChats().catch(() => [] as WaChat[]), []);
   const [sel, setSel] = useState<Set<string> | null>(null);
   const [kind, setKind] = useState<ChatFilter>('all');
@@ -79,10 +82,12 @@ export default function ConnectionsPage() {
   const [oauthMsg, setOauthMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    const err = p.get('google_error');
-    if (err) setOauthMsg({ tone: 'red', text: `Gmail was not connected. ${err}` });
-    else if (p.get('connected') === 'google') setOauthMsg({ tone: 'green', text: 'Gmail and Google Sheets are connected.' });
-    if (err || p.get('connected')) window.history.replaceState(null, '', window.location.pathname);
+    const gErr = p.get('google_error'), zErr = p.get('zoho_error'), ok = p.get('connected');
+    if (gErr) setOauthMsg({ tone: 'red', text: `Gmail was not connected. ${gErr}` });
+    else if (zErr) setOauthMsg({ tone: 'red', text: `Zoho was not connected. ${zErr}` });
+    else if (ok === 'google') setOauthMsg({ tone: 'green', text: 'Gmail and Google Sheets are connected.' });
+    else if (ok === 'zoho') setOauthMsg({ tone: 'green', text: 'Zoho Books is connected.' });
+    if (gErr || zErr || ok) window.history.replaceState(null, '', window.location.pathname);
   }, []);
   useEffect(() => {
     if (chats.data && !sel) { const w = new Set(chats.data.filter((c) => c.watched).map((c) => c.jid)); setSel(w); setPinned(w); }
@@ -131,6 +136,19 @@ export default function ConnectionsPage() {
         </div>
       )}
       {oauthMsg && <Card className={clsx('mt-3 px-4 py-3 text-[13.5px] sm:px-5', oauthMsg.tone === 'red' ? 'text-red' : 'text-green')}>{oauthMsg.text}</Card>}
+      {oauthUrls && (
+        <details className="mt-3 rounded border border-rule bg-card px-4 py-2.5 text-[13px] sm:px-5">
+          <summary className="cursor-pointer text-ink-2">Google or Zoho sign-in failing on this link? Redirect URIs for this address</summary>
+          <p className="mt-2 text-ink-3">Add these once in Google Cloud (Credentials, your OAuth client, Authorised redirect URIs) and in the Zoho API Console (your client, Authorized Redirect URIs). If you open the app on a new address, add that one too.</p>
+          {(['google', 'zoho'] as const).map((k) => (
+            <div key={k} className="mt-2 flex items-center gap-2">
+              <span className="w-14 shrink-0 font-semibold capitalize">{k}</span>
+              <code className="min-w-0 flex-1 truncate rounded bg-[#F4F1E8] px-2 py-1 text-[12px]">{oauthUrls[k]}</code>
+              <button className="pill py-0.5 text-[12px]" onClick={() => navigator.clipboard?.writeText(oauthUrls[k])}>Copy</button>
+            </div>
+          ))}
+        </details>
+      )}
       <Card className="mt-3 flex items-start gap-3 px-4 py-3 text-[13.5px] sm:px-5">
         <AlertTriangle size={16} strokeWidth={1.8} className="mt-0.5 shrink-0 text-amber" />
         <span><b>If WhatsApp logs out</b>, this card turns red and we message you: &quot;Open RevenueGuard and scan the QR again.&quot; Nothing is lost while it&apos;s away. If Zoho is down, cases pause and retry; nothing is billed twice.</span>

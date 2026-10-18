@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     public_api_url: str = "http://localhost:8000"
     web_url: str = "http://localhost:3000"
+    # optional: pin the public URL (e.g. https://app.example.com). Empty = use whatever URL the browser opened.
+    public_web_url: str = ""
     cors_origins: str = "http://localhost:3000"
 
     # Services
