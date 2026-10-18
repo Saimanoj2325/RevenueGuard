@@ -1,6 +1,8 @@
 """Connector management: OAuth web flows (Google, Zoho India DC), WhatsApp QR, bank CSV, sheets config, revoke."""
 from __future__ import annotations
 
+import logging
+
 import jwt
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import RedirectResponse
@@ -17,6 +19,7 @@ from ..events import emit
 from ..models import User
 from ..security import encrypt_json, sign_state, verify_state
 
+_log = logging.getLogger(__name__)
 router = APIRouter(prefix="/connectors")
 
 
@@ -82,14 +85,51 @@ async def google_start(user: User = Depends(require_role("admin")), session: Asy
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = Query(...), state: str = Query(...), session: AsyncSession = Depends(get_session)):
+async def google_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+):
+    """Google sends the browser here after consent. Every failure goes back to the app with a plain reason, never a bare 500."""
+    from urllib.parse import quote
+
+    import httpx
+
     from ..connectors.google import google_exchange_code
 
+    back = f"{get_settings().web_url}/setup/connections"
+
+    def fail(reason: str) -> RedirectResponse:
+        return RedirectResponse(f"{back}?google_error={quote(reason)}")
+
+    if error:
+        return fail("You cancelled the Google sign-in." if error == "access_denied" else f"Google said: {error}")
+    if not code or not state:
+        return fail("Google did not send a sign-in code. Start again from Connect Gmail.")
     try:
         st = verify_state(state)
-    except jwt.PyJWTError as e:
-        raise HTTPException(400, f"bad state: {e}") from e
-    tok = await google_exchange_code(code)
+    except jwt.PyJWTError:
+        return fail("That sign-in link expired. Start again from Connect Gmail.")
+    try:
+        tok = await google_exchange_code(code)
+    except httpx.HTTPStatusError as e:
+        try:
+            body = e.response.json()
+        except ValueError:
+            body = {"error": e.response.text[:200]}
+        _log.warning("google token exchange failed: %s %s", e.response.status_code, body)
+        err = body.get("error")
+        if err == "invalid_grant":
+            return fail("This sign-in code was already used or expired (did the page get refreshed?). Start again from Connect Gmail.")
+        if err == "redirect_uri_mismatch":
+            return fail(f"GOOGLE_REDIRECT_URI ({get_settings().google_redirect_uri}) is not listed in your Google Cloud OAuth client.")
+        if err in ("invalid_client", "unauthorized_client"):
+            return fail("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are wrong in .env.")
+        return fail(f"Google refused the sign-in: {err or e.response.status_code}")
+    except httpx.HTTPError as e:
+        _log.warning("google token exchange network error: %s", e)
+        return fail("Could not reach Google from the server. Check its internet connection and try again.")
     enc = encrypt_json(tok)
     for n in ("gmail", "sheets", "drive"):
         c = await get_connector(session, st["tid"], n)
@@ -100,7 +140,7 @@ async def google_callback(code: str = Query(...), state: str = Query(...), sessi
     await session.commit()
     for n in ("gmail", "sheets", "drive"):
         await emit(st["tid"], "connector.updated", name=n, status="connected")
-    return RedirectResponse(f"{get_settings().web_url}/connectors?connected=google")
+    return RedirectResponse(f"{back}?connected=google")
 
 
 @router.get("/zoho/start")

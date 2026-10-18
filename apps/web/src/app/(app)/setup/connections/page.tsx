@@ -75,6 +75,15 @@ export default function ConnectionsPage() {
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState(false);
+  // result of the Google sign-in redirect (?connected=google or ?google_error=...)
+  const [oauthMsg, setOauthMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const err = p.get('google_error');
+    if (err) setOauthMsg({ tone: 'red', text: `Gmail was not connected. ${err}` });
+    else if (p.get('connected') === 'google') setOauthMsg({ tone: 'green', text: 'Gmail and Google Sheets are connected.' });
+    if (err || p.get('connected')) window.history.replaceState(null, '', window.location.pathname);
+  }, []);
   useEffect(() => {
     if (chats.data && !sel) { const w = new Set(chats.data.filter((c) => c.watched).map((c) => c.jid)); setSel(w); setPinned(w); }
   }, [chats.data, sel]);
@@ -121,6 +130,7 @@ export default function ConnectionsPage() {
           {['google', 'whatsapp', 'sheets', acct].map((n) => <ConnCard key={n} name={n} c={byName(n)} onReconnect={() => reconnect(n)} />)}
         </div>
       )}
+      {oauthMsg && <Card className={clsx('mt-3 px-4 py-3 text-[13.5px] sm:px-5', oauthMsg.tone === 'red' ? 'text-red' : 'text-green')}>{oauthMsg.text}</Card>}
       <Card className="mt-3 flex items-start gap-3 px-4 py-3 text-[13.5px] sm:px-5">
         <AlertTriangle size={16} strokeWidth={1.8} className="mt-0.5 shrink-0 text-amber" />
         <span><b>If WhatsApp logs out</b>, this card turns red and we message you: &quot;Open RevenueGuard and scan the QR again.&quot; Nothing is lost while it&apos;s away. If Zoho is down, cases pause and retry; nothing is billed twice.</span>
