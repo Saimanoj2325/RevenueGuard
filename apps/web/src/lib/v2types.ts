@@ -130,3 +130,11 @@ export interface WaChat {
 export interface SheetColumn { header: string; meaning: string; confidence: 'sure' | 'check'; sample: string }
 export interface Backfill { sources: { name: string; done: number; total: number; status: string; label?: string }[]; first_case_ref: string | null; found_amount?: number; found_count?: number }
 export interface AskAnswer { answer: string; table: { columns: string[]; rows: (string | number)[][] } | null; proofs: Proof[]; actions: { label: string; href: string }[]; note?: string }
+
+export interface AiModelHealth {
+  name: 'nim' | 'groq' | 'ollama' | 'laya' | 'sarvam' | string;
+  label: string; role: string; model: string;
+  status: 'working' | 'slow' | 'down' | 'not_set_up' | 'demo';
+  latency_ms: number | null; detail: string | null; error: string | null; checked_at: string;
+}
+export interface AiHealth { models: AiModelHealth[]; reader: string | null; summary: string; checked_at: string; demo_mode: boolean }

@@ -847,6 +847,21 @@ class MockBackend {
       }
     }
 
+    if (seg[0] === 'ai' && seg[1] === 'health') {
+      const at = new Date().toISOString();
+      const row = (name: string, label: string, role: string, model: string, latency_ms: number, detail: string) => ({ name, label, role, model, status: 'working', latency_ms, detail, error: null, checked_at: at });
+      return {
+        models: [
+          row('nim', 'NVIDIA NIM', 'Main AI (reads messages, runs agents)', 'deepseek-ai/deepseek-v4.1-flash', 1840, 'Replied "OK"'),
+          row('groq', 'Groq', 'Backup AI', 'openai/gpt-oss-120b', 420, 'Replied "OK"'),
+          row('ollama', 'Ollama', 'Last backup, local', 'qwen3:8b', 2900, 'Replied "OK"'),
+          row('laya', 'Laya', 'Severity + prompt-injection check', 'laya (cuda)', 35, 'Weights loaded on cuda'),
+          row('sarvam', 'Sarvam', 'Voice notes (Hindi, Telugu, Hinglish)', 'saaras:v3', 760, 'Speech-to-text answered'),
+        ],
+        reader: 'nim', summary: 'Messages are read by NVIDIA NIM.', checked_at: at, demo_mode: true,
+      };
+    }
+
     if (seg[0] === 'connectors') {
       if (seg.length === 1) return clone(connectorsV2(this));
       const name = seg[1];

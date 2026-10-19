@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { AlertTriangle, FileSpreadsheet, Landmark, Mail, Megaphone, MessageCircle, Network, Radio, ReceiptText, RefreshCw, Search, User, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { AiModels } from '@/components/money/AiModels';
 import { WaQr } from '@/components/money/WaQr';
 import { Card, EmptyState, ErrorState, PageHead, Skeleton, plainError } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -153,6 +154,8 @@ export default function ConnectionsPage() {
         <AlertTriangle size={16} strokeWidth={1.8} className="mt-0.5 shrink-0 text-amber" />
         <span><b>If WhatsApp logs out</b>, this card turns red and we message you: &quot;Open RevenueGuard and scan the QR again.&quot; Nothing is lost while it&apos;s away. If Zoho is down, cases pause and retry; nothing is billed twice.</span>
       </Card>
+
+      <AiModels />
 
       <div className="mt-2 grid gap-x-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <section className="min-w-0">

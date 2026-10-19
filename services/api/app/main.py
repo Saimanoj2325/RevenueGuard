@@ -5,11 +5,12 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
+from .deps import current_user
 from .events import bus
 from .observability import configure_logging, correlation_id_var, get_logger, setup_otel
 
@@ -94,6 +95,14 @@ async def health():
     from .llm.router import get_llm
 
     return {"ok": True, "demo_mode": get_settings().demo_mode, "breakers": all_breakers(), "ai": get_llm().ai_health()}
+
+
+@app.get("/ai/health")
+async def ai_health_live(force: bool = False, user=Depends(current_user)):
+    """Live check of every AI model (NIM, Groq, Ollama, Laya, Sarvam). Cached 30 s; ?force=true re-checks now."""
+    from .ai_probe import probe_all
+
+    return await probe_all(force=force)
 
 
 from .routers import business, connectors, core, demo, internal, ws  # noqa: E402

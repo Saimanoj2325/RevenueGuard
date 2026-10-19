@@ -166,6 +166,7 @@ export const api = {
   team: async () => list<V.TeamMember>(await request('GET', '/settings/team')),
   saveNotifications: (n: NonNullable<V.Settings['notifications']>) => request<any>('PUT', '/settings/notifications', n),
   setPhone: (phone: string) => request<any>('PUT', '/me/phone', { phone }),
+  aiHealth: (force = false) => request<V.AiHealth>('GET', `/ai/health${force ? '?force=true' : ''}`),
   connectorsV2: async () => list<V.ConnectorV2>(await request('GET', '/connectors')),
   waChats: async () => list<V.WaChat>(await request('GET', '/connectors/whatsapp/chats')),
   setWaChats: (watched: string[]) => request<any>('PUT', '/connectors/whatsapp/chats', { watched }),
