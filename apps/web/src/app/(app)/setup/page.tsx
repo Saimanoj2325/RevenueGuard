@@ -1,74 +1,17 @@
 'use client';
 import clsx from 'clsx';
-import { ArrowRight, Check, FileSpreadsheet } from 'lucide-react';
+import { ArrowRight, Check } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { SheetPicker } from '@/components/money/SheetPicker';
 import { WaQr } from '@/components/money/WaQr';
-import { Card, ErrorState, Skeleton, StatusTag, plainError } from '@/components/ui';
+import { Card, ErrorState, Skeleton, StatusTag } from '@/components/ui';
 import { api } from '@/lib/api';
 import { isDemo, setDemo } from '@/lib/config';
 import { useLive } from '@/lib/hooks';
-import type { SheetColumn } from '@/lib/v2types';
 
-const MEANINGS: [string, string][] = [['po_ref', 'PO number'], ['customer', 'Customer'], ['item', 'Item'], ['qty_ordered', 'Ordered quantity'], ['qty_delivered', 'Delivered quantity'], ['qty_pending', 'Pending quantity'], ['delivery_date', 'Delivery date'], ['ignore', 'Ignore']];
 const STEPS = [{ k: 'google', t: 'Gmail', d: 'Reads purchase orders only' }, { k: 'whatsapp', t: 'WhatsApp', d: 'Challan photos and voice notes' }, { k: 'sheets', t: 'Delivery sheet', d: 'Tell us which columns mean what' }, { k: 'acct', t: 'Accounting', d: 'Zoho Books or Tally' }];
-
-function SheetStep({ onDone }: { onDone: () => void }) {
-  const [id, setId] = useState(isDemo() ? '1YqDispatchRegister2026' : '');
-  const [tab, setTab] = useState('Oct');
-  const [cols, setCols] = useState<SheetColumn[] | null>(null);
-  const [map, setMap] = useState<Record<string, string>>({});
-  const [meta, setMeta] = useState<{ title?: string; rows?: number }>({});
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  async function read() {
-    setBusy(true); setErr(null);
-    try { const r = await api.proposeMapping(id, tab); setCols(r.columns); setMeta({ title: r.title, rows: r.rows }); setMap(Object.fromEntries(r.columns.map((c) => [c.header, c.meaning]))); }
-    catch (e: any) { setErr(plainError(e?.message)); } finally { setBusy(false); }
-  }
-  async function save() {
-    setBusy(true); setErr(null);
-    try { await api.saveSheetConfig(id, `${tab}!A1:Z1000`, map); onDone(); } catch (e: any) { setErr(plainError(e?.message)); } finally { setBusy(false); }
-  }
-  const sample = (m: string) => cols?.find((c) => map[c.header] === m)?.sample.split(',')[0].trim();
-  return (
-    <div>
-      <div className="eyebrow">Step 3 of 4</div>
-      <h2 className="mt-1 text-[22px] font-semibold tracking-[-0.015em] sm:text-[26px]">{cols ? 'We read your sheet. Check the columns.' : 'Which sheet has your deliveries?'}</h2>
-      {!cols ? (
-        <div className="mt-4 max-w-[560px] space-y-3">
-          <label className="block text-[13px] text-ink-2">Google Sheet link or ID<input className="input mt-1" value={id} onChange={(e) => setId(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…" /></label>
-          <label className="block text-[13px] text-ink-2">Tab name<input className="input mt-1 max-w-[200px]" value={tab} onChange={(e) => setTab(e.target.value)} /></label>
-          <button className="btn" disabled={!id || busy} onClick={read}>{busy ? 'Reading…' : 'Read my sheet'}</button>
-          <p className="text-[12.5px] text-ink-3">We read the header and the first 20 rows, guess each column from its name first, then its values. You confirm.</p>
-        </div>
-      ) : (
-        <>
-          <p className="mt-1 text-[14px] text-ink-2"><FileSpreadsheet size={14} className="mr-1 inline" /><b>{meta.title}</b> · tab &quot;{tab}&quot; · {meta.rows} rows. We guessed what each column means from its name and values. Fix any that look wrong.</p>
-          <div className="card mt-4 overflow-x-auto">
-            <table className="tbl min-w-[640px]">
-              <thead><tr><th>Your column</th><th>Sample values</th><th>Means</th><th>Our guess</th></tr></thead>
-              <tbody>
-                {cols.map((c) => (
-                  <tr key={c.header}>
-                    <td><span className="mono rounded-sm border border-rule-2 bg-paper px-2 py-0.5 text-[12.5px]">{c.header}</span></td>
-                    <td className="text-[13px] text-ink-3">{c.sample}</td>
-                    <td><select className={clsx('select max-w-[220px] py-1.5 text-[13.5px]', c.confidence === 'check' && 'border-amber')} value={map[c.header]} onChange={(e) => setMap({ ...map, [c.header]: e.target.value })}>{MEANINGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
-                    <td>{map[c.header] === 'ignore' ? <span className="text-[13px] text-ink-3">Ignore</span> : <StatusTag tone={c.confidence === 'sure' ? 'green' : 'amber'}>{c.confidence === 'sure' ? 'Sure' : 'Please check'}</StatusTag>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4 flex items-start gap-2 rounded-md border border-green/25 bg-green-bg/70 px-4 py-3 text-[13.5px]"><Check size={15} className="mt-0.5 text-green" /><span><b>Preview with these columns:</b> {[sample('po_ref'), sample('customer'), sample('qty_ordered') && `${sample('qty_ordered')} ordered`, sample('qty_delivered') && `${sample('qty_delivered')} delivered`, sample('qty_pending') && `${sample('qty_pending')} pending`, sample('delivery_date')].filter(Boolean).join(' · ')}</span></div>
-          <div className="mt-4 flex flex-wrap gap-2"><button className="btn" disabled={busy} onClick={save}>Looks right, continue</button><button className="btn-ghost" onClick={() => setCols(null)}>Use a different tab</button></div>
-        </>
-      )}
-      {err && <ErrorState error={err} className="mt-3" />}
-    </div>
-  );
-}
 
 export default function SetupPage() {
   const router = useRouter();
@@ -118,7 +61,7 @@ export default function SetupPage() {
         </Card>
       </div>
       <div className="min-w-0">
-        {!q.data ? (q.error ? <ErrorState error={q.error} onRetry={q.reload} /> : <Skeleton className="h-60" />) : cur === 2 ? <SheetStep onDone={() => { q.reload(); setStep(3); }} /> : (
+        {!q.data ? (q.error ? <ErrorState error={q.error} onRetry={q.reload} /> : <Skeleton className="h-60" />) : cur === 2 ? <SheetPicker eyebrow="Step 3 of 4" onDone={() => { q.reload(); setStep(3); }} /> : (
           <div className="max-w-[640px]">
             <div className="eyebrow">Step {cur + 1} of 4</div>
             {cur === 0 && <><h2 className="mt-1 text-[24px] font-semibold">Connect Gmail</h2><p className="mt-1 text-ink-2">We read emails that look like purchase orders. Read-only: we never send from Gmail without your approval.</p>

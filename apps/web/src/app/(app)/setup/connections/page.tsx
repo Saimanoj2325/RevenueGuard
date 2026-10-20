@@ -4,6 +4,7 @@ import { AlertTriangle, FileSpreadsheet, Landmark, Mail, Megaphone, MessageCircl
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { AiModels } from '@/components/money/AiModels';
+import { SheetPicker } from '@/components/money/SheetPicker';
 import { WaQr } from '@/components/money/WaQr';
 import { Card, EmptyState, ErrorState, PageHead, Skeleton, plainError } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -39,7 +40,7 @@ function healthOf(c?: ConnectorV2): { word: string; tone: 'green' | 'amber' | 'r
   return { word: 'Working', tone: 'green' };
 }
 
-function ConnCard({ name, c, onReconnect }: { name: string; c?: ConnectorV2; onReconnect: () => void }) {
+function ConnCard({ name, c, onReconnect, onChange }: { name: string; c?: ConnectorV2; onReconnect: () => void; onChange?: () => void }) {
   const m = META[name];
   const h = healthOf(c);
   const notLinked = !c || c.status === 'disconnected';
@@ -57,7 +58,8 @@ function ConnCard({ name, c, onReconnect }: { name: string; c?: ConnectorV2; onR
           <div className="mt-1 text-[13.5px]">{c?.error_plain && h.tone !== 'green' ? <span className={h.tone === 'red' ? 'text-red' : 'text-amber'}>{c.error_plain}</span> : c?.last_sync ? `Synced ${minsAgo(c.last_sync)}` : 'Waiting for first sync'}</div>
         </>
       )}
-      {h.tone !== 'green' && <button className="btn-ghost btn-sm mt-3 self-start" onClick={onReconnect}><RefreshCw size={13} />{notLinked ? 'Connect' : 'Reconnect'}</button>}
+      {h.tone !== 'green' ? <button className="btn-ghost btn-sm mt-3 self-start" onClick={onReconnect}><RefreshCw size={13} />{notLinked ? (name === 'sheets' ? 'Pick sheet' : 'Connect') : 'Reconnect'}</button>
+        : onChange && <button className="btn-ghost btn-sm mt-3 self-start" onClick={onChange}><RefreshCw size={13} />Change sheet</button>}
     </Card>
   );
 }
@@ -79,6 +81,8 @@ export default function ConnectionsPage() {
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const openSheet = () => { setSheetOpen(true); setTimeout(() => document.getElementById('sheet-picker')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
   // result of the Google sign-in redirect (?connected=google or ?google_error=...)
   const [oauthMsg, setOauthMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
   useEffect(() => {
@@ -119,6 +123,7 @@ export default function ConnectionsPage() {
     if (name === 'whatsapp') { setQr(true); return; }
     if (isDemo()) { await api.mockConnect(name); setTimeout(q.reload, 1800); return; }
     if (name === 'google' || name === 'zoho') { window.location.href = api.oauthStartUrl(name); return; }
+    if (name === 'sheets') { openSheet(); return; }
     window.location.href = '/setup';
   }
   async function save() {
@@ -133,8 +138,24 @@ export default function ConnectionsPage() {
       <PageHead title={t('connections.title')} sub={t('connections.sub')} />
       {q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : !q.data ? <Skeleton className="h-[130px]" /> : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {['google', 'whatsapp', 'sheets', acct].map((n) => <ConnCard key={n} name={n} c={byName(n)} onReconnect={() => reconnect(n)} />)}
+          {['google', 'whatsapp', 'sheets', acct].map((n) => <ConnCard key={n} name={n} c={byName(n)} onReconnect={() => reconnect(n)} onChange={n === 'sheets' ? openSheet : undefined} />)}
         </div>
+      )}
+      {q.data && (sheetOpen || (byName('sheets')?.status !== 'connected' && byName('google')?.status === 'connected')) && (
+        <Card id="sheet-picker" className="mt-3 p-4 sm:p-5">
+          {byName('google')?.status !== 'connected' && !isDemo() ? (
+            <div className="text-[13.5px] text-amber">Connect Gmail first. The delivery sheet is read with the same Google sign-in.</div>
+          ) : (
+            <SheetPicker
+              eyebrow="Delivery sheet"
+              doneLabel="Save sheet"
+              initialId={String((byName('sheets')?.config as any)?.spreadsheet_id ?? '')}
+              initialTab={String((byName('sheets')?.config as any)?.range ?? 'Oct!').split('!')[0] || 'Oct'}
+              onDone={() => { setSheetOpen(false); q.reload(); }}
+            />
+          )}
+          {sheetOpen && <button className="btn-ghost btn-sm mt-3" onClick={() => setSheetOpen(false)}>Close</button>}
+        </Card>
       )}
       {oauthMsg && <Card className={clsx('mt-3 px-4 py-3 text-[13.5px] sm:px-5', oauthMsg.tone === 'red' ? 'text-red' : 'text-green')}>{oauthMsg.text}</Card>}
       {oauthUrls && (
