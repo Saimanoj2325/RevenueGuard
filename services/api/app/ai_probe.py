@@ -40,7 +40,7 @@ def _plain_error(e: Exception) -> str:
     if "403" in s:
         return "Access denied (403). The key may not have access to this model."
     if "404" in s or "not found" in low:
-        return "Model not found (404). Check the model name."
+        return f"Not found (404): the model name or the address is wrong. Service said: {str(e)[:140]}"
     if "429" in s or "rate" in low:
         return "Rate limited (429). Free-tier limit hit, try again in a minute."
     if "timeout" in low or "timed out" in low:
@@ -70,7 +70,10 @@ async def _chat(name: str, label: str, base_url: str, api_key: str, model: str, 
         txt = ((r.choices[0].message.content or "") if r.choices else "").strip()
         return _row(name, label, role, model, "working", _ms(t0), f'Replied "{txt[:20] or "(empty)"}"')
     except Exception as e:  # noqa: BLE001
-        return _row(name, label, role, model, "down", _ms(t0), error=_plain_error(e))
+        err = _plain_error(e)
+        if err.startswith("Not found (404)"):
+            err = f"Model \"{model}\" not found at {base_url} (404). Check the model name in .env. " + err.split("Service said:", 1)[-1].strip()[:120]
+        return _row(name, label, role, model, "down", _ms(t0), error=err)
 
 
 async def probe_nim() -> dict[str, Any]:
