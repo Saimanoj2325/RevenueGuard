@@ -40,6 +40,8 @@ BUILTIN = {
 KEEP_SECONDS = 30 * 60
 BAD_SECONDS = 15 * 60
 PROBE_TIMEOUT = 12.0
+# a model that answers but takes longer than this is kept only as a last resort: the next candidate is tried first
+SLOW_PROBE_MS = 5000
 
 _picked: dict[str, dict[str, Any]] = {}
 _bad: dict[str, dict[str, Any]] = {}
@@ -112,12 +114,18 @@ async def pick(kind: str = "text", force: bool = False) -> str:
         if not force and p and time.time() - p["at"] < KEEP_SECONDS and not is_bad(p["model"]):
             return p["model"]
         tried: list[dict[str, Any]] = []
+        slow: list[tuple[int, str]] = []
         for m in candidates(kind):
             if is_bad(m) and not force:
                 tried.append({"model": m, "ok": False, "error": _bad[m]["reason"], "skipped": True})
                 continue
             ok, ms, err = await _probe(m)
             tried.append({"model": m, "ok": ok, "latency_ms": ms, "error": err})
+            if ok and ms > SLOW_PROBE_MS:
+                tried[-1]["slow"] = True
+                slow.append((ms, m))
+                log.warning("nim.model_slow", model=m, latency_ms=ms)
+                continue
             if ok:
                 _bad.pop(m, None)
                 _picked[kind] = {"model": m, "at": time.time(), "latency_ms": ms}
@@ -127,6 +135,10 @@ async def pick(kind: str = "text", force: bool = False) -> str:
                 return m
             mark_bad(m, err or "no reply")
         _tried[kind] = tried
+        if slow:  # every fast model is gone: use the quickest slow one rather than none
+            ms, m = min(slow)
+            _picked[kind] = {"model": m, "at": time.time(), "latency_ms": ms}
+            return m
         return first_choice(kind)  # nothing answered: callers fail over to Groq/Ollama
 
 

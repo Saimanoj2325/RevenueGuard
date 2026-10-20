@@ -89,6 +89,9 @@ async def probe_nim() -> dict[str, Any]:
     row = await _chat("nim", "NVIDIA NIM", s.nim_base_url, s.nvidia_api_key, model, 25)
     st = nim_models.status("text")
     gone = [t["model"].split("/")[-1] for t in st["tried"] if not t.get("ok")]
+    slow = [t["model"].split("/")[-1] for t in st["tried"] if t.get("slow") and t["model"] != model]
+    if slow:
+        gone += [f"{m} (too slow)" for m in slow]
     if row["status"] in ("working", "slow"):
         if model != st["wanted"]:
             row["detail"] = f"Auto-picked. {', '.join(gone) or st['wanted']} not available on NVIDIA right now. " + (row.get("detail") or "")

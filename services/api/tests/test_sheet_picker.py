@@ -81,3 +81,19 @@ async def test_sheet_files_tabs_and_saved_config(api, db):
     assert ok.status_code == 200
     cfg = (await api.get("/connectors/sheets/config")).json()
     assert cfg["spreadsheet_id"] == files[0]["id"] and cfg["tab"] == "Oct" and cfg["title"] == "Dispatch Register" and cfg["mapping"] == mapping
+
+
+async def test_nim_pick_skips_slow_model(monkeypatch):
+    from app.config import get_settings
+    from app.llm import nim_models
+
+    s = get_settings()
+    nim_models.reset()
+    monkeypatch.setattr(s, "nvidia_api_key", "k")
+    monkeypatch.setattr(s, "nim_model", "slow/model,fast/model")
+
+    async def fake_probe(m, timeout=1):
+        return (True, 9000 if m == "slow/model" else 400, None)
+    monkeypatch.setattr(nim_models, "_probe", fake_probe)
+    assert await nim_models.pick("text") == "fast/model"
+    nim_models.reset()
