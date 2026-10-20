@@ -488,6 +488,9 @@ async def reread_pending(limit: int = 50) -> int:
                 break  # still no model: try again on the next sweep
             if case is not None and not fields.get("po_ref") and case.po_ref:
                 fields["po_ref"] = case.po_ref
+            if case is None:
+                # it came in unread with no case: now that we know what it is, link it (or open a case) like intake would
+                case = await _case_for_read(s, n, fields, chat)
             new, _ = await cs.add_evidence(s, case, n.tenant_id, kind=_kind(n.source, fields.get("doc_type", "other"), n.mime), source=n.source,
                                            source_id=f"{n.source_id}#read", title=n.title, excerpt=n.excerpt, fields=fields, ts=n.ts,
                                            media_object_key=n.media_object_key, mime=n.mime, derived_text=n.derived_text, actor="reader")
@@ -497,6 +500,38 @@ async def reread_pending(limit: int = 50) -> int:
             done += 1
             if case is not None:
                 touched.add(case.id)
+        # messages that were read later BEFORE this fix: the read worked but no case was opened. Link them now.
+        orphans = [n for n in rows if n.case_id is None and str(n.source_id).endswith("#read") and not (n.fields or {}).get("linked_to")
+                   and (n.fields or {}).get("po_ref") and (n.fields or {}).get("doc_type") in CASE_DOC_TYPES][:limit]
+        for n in orphans:
+            case = await _case_for_read(s, n, dict(n.fields or {}), None)
+            if case is None:
+                continue
+            new, _ = await cs.add_evidence(s, case, n.tenant_id, kind=n.kind, source=n.source, source_id=n.source_id, title=n.title, excerpt=n.excerpt,
+                                           fields={k: v for k, v in (n.fields or {}).items() if k != "linked_to"}, ts=n.ts,
+                                           media_object_key=n.media_object_key, mime=n.mime, derived_text=n.derived_text, actor="reader")
+            n.fields = {**(n.fields or {}), "linked_to": case.id}
+            await append_audit(s, n.tenant_id, "intake.read_later_linked", "reader", {"node_id": n.id, "new_node_id": new.id}, case.id, case.correlation_id)
+            done += 1
+            touched.add(case.id)
     for cid in touched:
         await enqueue_advance(cid)
     return done
+
+
+CASE_DOC_TYPES = ("order", "delivery", "correction", "payment", "invoice")
+
+
+async def _case_for_read(s, n: EvidenceNode, fields: dict[str, Any], chat: str | None) -> Case | None:
+    """Find or open the case for a message that was read late. Also moves its attachments and intake record onto the case."""
+    po = fields.get("po_ref")
+    if not po or fields.get("doc_type") not in CASE_DOC_TYPES:
+        return None
+    base_id = str(n.source_id).split("#")[0]
+    case, _link = await _find_case(s, n.tenant_id, po, chat, n.source)
+    if case is None:
+        case = await create_case(s, n.tenant_id, fields, f"{po} · {fields.get('customer') or 'unknown customer'}", "reader")
+    rec = (await s.execute(select(IntakeRecord).where(IntakeRecord.tenant_id == n.tenant_id, IntakeRecord.source_id == base_id))).scalars().first()
+    if rec is not None and rec.case_id is None:
+        rec.case_id, rec.status = case.id, "accepted"
+    return case

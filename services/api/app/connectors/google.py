@@ -166,7 +166,7 @@ class LiveGmail(_GoogleBase, GmailAdapter):
 
     async def list_new_messages(self, cursor):
         cursor = dict(cursor or {})
-        ids: list[str] = []
+        ids: list[str] = list(cursor.pop("retry", None) or [])  # messages whose intake failed last time
         if cursor.get("history_id"):
             page = None
             while True:
@@ -187,7 +187,7 @@ class LiveGmail(_GoogleBase, GmailAdapter):
         if not cursor.get("history_id"):
             prof = await self._req("GET", f"{GMAIL}/profile")
             lst = await self._req("GET", f"{GMAIL}/messages", params={"q": get_settings().gmail_query, "maxResults": 25})
-            ids = [x["id"] for x in (lst or {}).get("messages", [])]
+            ids = ids + [x["id"] for x in (lst or {}).get("messages", [])]
             cursor = {"history_id": (prof or {}).get("historyId")}
         out = []
         for mid in dict.fromkeys(ids):

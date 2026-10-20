@@ -35,6 +35,7 @@ async def sync_gmail(tenant_id: str, enqueue: bool = True) -> dict[str, Any]:
         conn.last_sync_at = utcnow()
         conn.error = None
     results = []
+    failed: list[str] = []
     for m in msgs:
         try:
             ts = datetime.fromisoformat(m["date"]) if m.get("date") else None
@@ -46,7 +47,19 @@ async def sync_gmail(tenant_id: str, enqueue: bool = True) -> dict[str, Any]:
             attachments=[IntakeAttachment(filename=a["filename"], mime=a.get("mime") or "application/octet-stream", data=a.get("data"), sidecar_text=a.get("sidecar_text"))
                          for a in m.get("attachments", []) if a.get("data")][:10],
         )
-        results.append(await intake(tenant_id, item, actor="gmail-sync", enqueue=enqueue))
+        try:
+            results.append(await intake(tenant_id, item, actor="gmail-sync", enqueue=enqueue))
+        except Exception as e:  # noqa: BLE001
+            # never lose a mail: the cursor already moved past it, so remember it and fetch it again next poll
+            log.exception("sync.gmail_intake_failed", message_id=m["id"])
+            failed.append(m["id"])
+            results.append({"status": "error", "source_id": m["id"], "error": str(e)[:200]})
+    if failed:
+        async with session_scope() as s:
+            conn = await get_connector(s, tenant_id, "gmail")
+            cur = dict(conn.cursor or {})
+            cur["retry"] = list(dict.fromkeys((cur.get("retry") or []) + failed))[-20:]
+            conn.cursor = cur
     return {"status": "ok", "fetched": len(msgs), "results": results}
 
 

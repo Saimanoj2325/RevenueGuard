@@ -107,3 +107,33 @@ async def test_whatsapp_correction_read_by_llm_updates_the_case(db, monkeypatch)
         async with session_scope() as s:
             case = (await s.execute(select(Case).where(Case.case_number == "RG-1042"))).scalar_one()
             assert before == 60 and (await cs.compute_facts(s, case)).delivered_qty == 100
+
+
+async def test_mail_read_later_opens_its_case(db, monkeypatch):
+    """A PO mail that came in while no model answered is kept unread with no case. When a model is back, the re-read
+    must open the case (live bug 2026-10-20: PO-311 was re-read fine but no case appeared)."""
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.db import session_scope
+    from app.intake import IntakeItem, intake, reread_pending
+    from app.llm import router as r
+    from app.models import Case, IntakeRecord
+
+    monkeypatch.setattr(get_settings(), "demo_mode", False)
+
+    async def down(*a, **k):
+        raise r.LLMUnavailable("all down")
+
+    monkeypatch.setattr(r.get_llm(), "complete_structured", down)
+    text = "Please find attached our Purchase Order PO-311. Item: Model X Monoblock Pump 1 HP. Quantity: 150 pcs. Rate: Rs 2,400 per piece."
+    res = await intake(db, IntakeItem(source="gmail", source_id="gm-po311", sender_name="Ramesh", subject="PO-311 Model X pumps", text=text), actor="gmail-sync")
+    assert res["case_id"] is None
+
+    monkeypatch.setattr(r.get_llm(), "complete_structured", _fake(lambda u: {
+        "doc_type": "order", "po_ref": "PO-311", "customer": "Sri Lakshmi Agro Traders", "qty_ordered": 150, "rate": 2400, "confidence": 0.95}))
+    assert await reread_pending() >= 1
+    async with session_scope() as s:
+        case = (await s.execute(select(Case).where(Case.tenant_id == db, Case.po_ref == "PO-311"))).scalar_one()
+        rec = (await s.execute(select(IntakeRecord).where(IntakeRecord.source_id == "gm-po311"))).scalar_one()
+        assert rec.case_id == case.id and rec.status == "accepted"
