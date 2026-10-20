@@ -154,6 +154,8 @@ export class OpenAICompatProvider implements ModelProvider {
       max_tokens: req.maxOutputTokens ?? this.opts.maxOutputTokens,
       stream: false,
     }
+    // NIM reasoning models (Nemotron 3.5) otherwise spend the whole token budget thinking and return an empty answer
+    if (this.name === 'nim') body.chat_template_kwargs = { enable_thinking: false }
     if (req.tools.length) {
       body.tools = req.tools
       body.tool_choice = 'auto'

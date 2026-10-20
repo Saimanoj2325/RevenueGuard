@@ -49,6 +49,16 @@ _tried: dict[str, list[dict[str, Any]]] = {}
 _lock = asyncio.Lock()
 
 
+# Nemotron 3.5 and other NIM models "think" before answering by default. With a small max_tokens budget the whole
+# budget goes on reasoning and the answer comes back EMPTY (finish_reason=length). Asking the chat template to skip
+# thinking gives the JSON directly in ~2 s; models that don't know the flag ignore it (checked: gpt-oss, glm).
+NO_THINK = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def extra_body(provider: str) -> dict[str, Any] | None:
+    return NO_THINK if provider == "nim" else None
+
+
 def _configured(kind: str) -> str:
     s = get_settings()
     return (s.nim_vision_model if kind == "vision" else s.nim_model) or "auto"
@@ -94,9 +104,13 @@ async def _probe(model: str, timeout: float = PROBE_TIMEOUT) -> tuple[bool, int,
     t0 = time.perf_counter()
     try:
         client = AsyncOpenAI(base_url=s.nim_base_url, api_key=s.nvidia_api_key, timeout=timeout, max_retries=0)
-        await asyncio.wait_for(client.chat.completions.create(
-            model=model, messages=[{"role": "user", "content": "Reply with just: OK"}], max_tokens=16, temperature=0), timeout + 1)
-        return True, int((time.perf_counter() - t0) * 1000), None
+        r = await asyncio.wait_for(client.chat.completions.create(
+            model=model, messages=[{"role": "user", "content": "Reply with just: OK"}], max_tokens=64, temperature=0,
+            extra_body=NO_THINK), timeout + 1)
+        ms = int((time.perf_counter() - t0) * 1000)
+        if not (r.choices and (r.choices[0].message.content or "").strip()):
+            return False, ms, "empty answer (model only produced reasoning)"
+        return True, ms, None
     except Exception as e:  # noqa: BLE001
         return False, int((time.perf_counter() - t0) * 1000), f"{type(e).__name__}: {str(e)[:140]}"
 

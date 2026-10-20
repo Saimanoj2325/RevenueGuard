@@ -66,8 +66,11 @@ async def _chat(name: str, label: str, base_url: str, api_key: str, model: str, 
     try:
         client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0)
         r = await asyncio.wait_for(client.chat.completions.create(
-            model=model, messages=[{"role": "user", "content": "Reply with just: OK"}], max_tokens=60, temperature=0), timeout + 2)
+            model=model, messages=[{"role": "user", "content": "Reply with just: OK"}], max_tokens=60, temperature=0,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}} if name == "nim" else None), timeout + 2)
         txt = ((r.choices[0].message.content or "") if r.choices else "").strip()
+        if not txt:
+            return _row(name, label, role, model, "down", _ms(t0), error="Answered with an empty reply (model only produced reasoning).")
         return _row(name, label, role, model, "working", _ms(t0), f'Replied "{txt[:20] or "(empty)"}"')
     except Exception as e:  # noqa: BLE001
         err = _plain_error(e)

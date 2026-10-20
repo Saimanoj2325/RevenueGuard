@@ -80,11 +80,13 @@ async def chat_with_tools(task: str, messages: list[dict[str, Any]], tools: list
 
             p.model = await pick("text")
 
+        from .nim_models import extra_body
+
         async def _do(p=p):
             client = AsyncOpenAI(base_url=p.base_url, api_key=p.api_key, timeout=s.llm_timeout_seconds, max_retries=0)
             try:
                 resp = await client.chat.completions.create(model=p.model, messages=messages, tools=tools, tool_choice="auto",
-                                                            temperature=0, max_tokens=max_tokens)
+                                                            temperature=0, max_tokens=max_tokens, extra_body=extra_body(p.name))
                 return resp, "tools"
             except BadRequestError:
                 # provider/model has no tool calling: same conversation, JSON protocol instead
@@ -94,7 +96,7 @@ async def chat_with_tools(task: str, messages: list[dict[str, Any]], tools: list
                     if m.get("role") == "tool":
                         msgs.append({"role": "user", "content": f"TOOL RESULT:\n{m['content']}"})
                 resp = await client.chat.completions.create(model=p.model, messages=msgs, temperature=0, max_tokens=max_tokens,
-                                                            response_format={"type": "json_object"})
+                                                            response_format={"type": "json_object"}, extra_body=extra_body(p.name))
                 return resp, "json"
 
         try:

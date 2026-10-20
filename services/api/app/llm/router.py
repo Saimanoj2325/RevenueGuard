@@ -118,7 +118,11 @@ class LLMRouter:
         from openai import AsyncOpenAI, BadRequestError
 
         client = AsyncOpenAI(base_url=p.base_url, api_key=p.api_key, timeout=timeout, max_retries=0)
+        from .nim_models import extra_body
+
         kwargs: dict[str, Any] = {"model": p.model, "messages": messages, "temperature": 0, "max_tokens": max_tokens}
+        if extra_body(p.name):
+            kwargs["extra_body"] = extra_body(p.name)
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         try:
@@ -127,6 +131,11 @@ class LLMRouter:
             kwargs.pop("response_format", None)
             resp = await client.chat.completions.create(**kwargs)
         content = resp.choices[0].message.content or ""
+        if not content.strip() and resp.choices[0].finish_reason == "length":
+            # a reasoning model spent the whole budget thinking: once more with room for the answer
+            kwargs["max_tokens"] = min(4096, max_tokens * 4)
+            resp = await client.chat.completions.create(**kwargs)
+            content = resp.choices[0].message.content or ""
         tokens = (resp.usage.total_tokens if resp.usage else 0) or (len(json.dumps(messages)) + len(content)) // 4
         return content, tokens
 
