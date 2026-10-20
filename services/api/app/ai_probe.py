@@ -66,7 +66,7 @@ async def _chat(name: str, label: str, base_url: str, api_key: str, model: str, 
     try:
         client = AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0)
         r = await asyncio.wait_for(client.chat.completions.create(
-            model=model, messages=[{"role": "user", "content": "Reply with just: OK"}], max_tokens=5, temperature=0), timeout + 2)
+            model=model, messages=[{"role": "user", "content": "Reply with just: OK"}], max_tokens=60, temperature=0), timeout + 2)
         txt = ((r.choices[0].message.content or "") if r.choices else "").strip()
         return _row(name, label, role, model, "working", _ms(t0), f'Replied "{txt[:20] or "(empty)"}"')
     except Exception as e:  # noqa: BLE001
@@ -79,9 +79,24 @@ async def _chat(name: str, label: str, base_url: str, api_key: str, model: str, 
 async def probe_nim() -> dict[str, Any]:
     s = get_settings()
     if not s.nvidia_api_key:
-        return _row("nim", "NVIDIA NIM", "Main AI (reads messages, runs agents)", s.nim_model,
+        from .llm.nim_models import first_choice
+
+        return _row("nim", "NVIDIA NIM", "Main AI (reads messages, runs agents)", first_choice("text"),
                     "demo" if s.demo_mode else "not_set_up", error=None if s.demo_mode else "NVIDIA_API_KEY is empty.")
-    return await _chat("nim", "NVIDIA NIM", s.nim_base_url, s.nvidia_api_key, s.nim_model, 25)
+    from .llm import nim_models
+
+    model = await nim_models.pick("text", force=True)
+    row = await _chat("nim", "NVIDIA NIM", s.nim_base_url, s.nvidia_api_key, model, 25)
+    st = nim_models.status("text")
+    gone = [t["model"].split("/")[-1] for t in st["tried"] if not t.get("ok")]
+    if row["status"] in ("working", "slow"):
+        if model != st["wanted"]:
+            row["detail"] = f"Auto-picked. {', '.join(gone) or st['wanted']} not available on NVIDIA right now. " + (row.get("detail") or "")
+        else:
+            row["detail"] = "Auto-picked. " + (row.get("detail") or "")
+    elif gone:
+        row["error"] = f"No NVIDIA model answered (tried {', '.join(gone)}). Groq is doing the work."
+    return row
 
 
 async def probe_groq() -> dict[str, Any]:

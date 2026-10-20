@@ -77,16 +77,51 @@ export class ProviderError extends Error {
   }
 }
 
+/** NVIDIA adds/removes free-endpoint models without notice, so NIM_MODEL is a preference list ("auto", one name, or a,b,c).
+ *  Same list as services/api/app/llm/nim_models.py. */
+export const NIM_BUILTIN = [
+  'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  'openai/gpt-oss-20b',
+  'deepseek-ai/deepseek-v4.1-flash',
+  'nvidia/nemotron-3-super-120b-a12b',
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'z-ai/glm-5.3-flash',
+]
+export function modelCandidates(name: string, configured: string): string[] {
+  const own = configured.split(',').map((s) => s.trim()).filter((s) => s && s.toLowerCase() !== 'auto')
+  return [...new Set(name === 'nim' ? [...own, ...NIM_BUILTIN] : own.length ? own : [configured])]
+}
+const BAD_MS = 15 * 60_000
+
 export class OpenAICompatProvider implements ModelProvider {
   readonly name: string
-  readonly model: string
+  private readonly candidates: string[]
+  private idx = 0
+  private readonly bad = new Map<string, number>()
   constructor(
     private readonly cfg: ProviderConfig,
     private readonly opts: { temperature: number; maxOutputTokens: number },
     private readonly fetchImpl: typeof fetch = fetch,
   ) {
     this.name = cfg.name
-    this.model = cfg.model
+    this.candidates = modelCandidates(cfg.name, cfg.model)
+  }
+
+  get model(): string {
+    return this.candidates[this.idx] ?? this.cfg.model
+  }
+
+  /** Skip a model NVIDIA pulled (404/410) or that stalled; returns false when every candidate is marked bad. */
+  private skip(model: string): boolean {
+    this.bad.set(model, Date.now() + BAD_MS)
+    for (let k = 1; k <= this.candidates.length; k++) {
+      const j = (this.idx + k) % this.candidates.length
+      if ((this.bad.get(this.candidates[j]) ?? 0) < Date.now()) {
+        this.idx = j
+        return true
+      }
+    }
+    return false
   }
 
   costInr(u: ModelUsage): number {
@@ -94,8 +129,26 @@ export class OpenAICompatProvider implements ModelProvider {
   }
 
   async call(req: ModelRequest, signal: AbortSignal): Promise<ProviderCallResult> {
+    // a pulled model answers 404 in ~0.1 s, so trying the next one inside the same call is cheap
+    for (let tries = 0; ; tries++) {
+      const model = this.model
+      try {
+        return await this.callModel(model, req, signal)
+      } catch (err) {
+        const gone = err instanceof ProviderError && (err.status === 404 || err.status === 410)
+        const stalled = (err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError'
+        if (this.candidates.length > 1 && (gone || stalled)) {
+          const more = this.skip(model)
+          if (gone && more && tries < this.candidates.length - 1 && !signal.aborted) continue
+        }
+        throw err
+      }
+    }
+  }
+
+  private async callModel(model: string, req: ModelRequest, signal: AbortSignal): Promise<ProviderCallResult> {
     const body: Record<string, unknown> = {
-      model: this.cfg.model,
+      model,
       messages: req.messages.map(toWire),
       temperature: this.opts.temperature,
       max_tokens: req.maxOutputTokens ?? this.opts.maxOutputTokens,

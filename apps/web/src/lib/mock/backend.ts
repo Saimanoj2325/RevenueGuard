@@ -793,7 +793,7 @@ class MockBackend {
     }
 
     if (path === '/approvals/bulk-approve') return handleV2(this, method, path, params, body, me);
-    if (seg[0] === 'connectors' && (seg[2] === 'chats' || seg[2] === 'propose-mapping')) return handleV2(this, method, path, params, body, me);
+    if (seg[0] === 'connectors' && (seg[2] === 'chats' || seg[2] === 'propose-mapping' || seg[2] === 'files' || seg[2] === 'tabs' || (seg[1] === 'sheets' && seg[2] === 'config' && method === 'GET'))) return handleV2(this, method, path, params, body, me);
     if (seg[0] === 'approvals') {
       if (seg.length === 1) {
         const st = params.get('status');
@@ -912,7 +912,8 @@ class MockBackend {
       }
       if (name === 'sheets' && seg[2] === 'config') {
         const c = this.db.connectors.sheets;
-        c.config = { spreadsheet_id: body?.spreadsheet_id, range: body?.range };
+        const id = String(body?.spreadsheet_id ?? '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] ?? body?.spreadsheet_id;
+        c.config = { spreadsheet_id: id, range: body?.range, tab: String(body?.range ?? '').split('!')[0].replace(/'/g, ''), title: body?.title, mapping: body?.mapping ?? {}, saved_by: me.email, saved_at: this.now() };
         c.status = 'connected'; c.last_sync = this.now();
         this.auditRow({ actor: me.email, action: 'connector.sheets.config', detail: `${body?.spreadsheet_id} ${body?.range}` });
         this.emit({ type: 'connector.updated', name: 'sheets', status: 'connected' });

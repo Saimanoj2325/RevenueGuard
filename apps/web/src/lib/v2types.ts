@@ -127,6 +127,9 @@ export interface WaChat {
   push_name?: string;
   parent?: string; parent_name?: string;
 }
+export interface SheetFile { id: string; name: string; modified_at?: string | null }
+export interface SheetTab { title: string; rows?: number | null; header?: string[]; score?: number }
+export interface SheetSaved { spreadsheet_id: string | null; title: string | null; tab: string | null; mapping: Record<string, string>; saved_by?: string | null; saved_at?: string | null }
 export interface SheetColumn { header: string; meaning: string; confidence: 'sure' | 'check'; sample: string }
 export interface Backfill { sources: { name: string; done: number; total: number; status: string; label?: string }[]; first_case_ref: string | null; found_amount?: number; found_count?: number }
 export interface AskAnswer { answer: string; table: { columns: string[]; rows: (string | number)[][] } | null; proofs: Proof[]; actions: { label: string; href: string }[]; note?: string }

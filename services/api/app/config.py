@@ -56,8 +56,9 @@ class Settings(BaseSettings):
     # LLMs (all OpenAI compatible)
     nvidia_api_key: str = ""
     nim_base_url: str = "https://integrate.api.nvidia.com/v1"
-    nim_model: str = "deepseek-ai/deepseek-v4.1-flash"
-    nim_vision_model: str = "deepseek-ai/deepseek-v4.1-flash"
+    # "auto" or a comma list in order of preference; the first one that answers is used (see app/llm/nim_models.py)
+    nim_model: str = "auto"
+    nim_vision_model: str = "auto"
     nim_parse_model: str = "nvidia/nemotron-parse"
     nim_omni_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     groq_api_key: str = ""

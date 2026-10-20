@@ -138,7 +138,7 @@ Order: **Sarvam → NIM omni → Groq Whisper → fixture sidecar (DEMO_MODE onl
 
 All providers are OpenAI-compatible, and every model name comes from env:
 
-1. **NVIDIA NIM**: `NIM_MODEL=deepseek-ai/deepseek-v4.1-flash` (needs `NVIDIA_API_KEY`)
+1. **NVIDIA NIM**: `NIM_MODEL=auto` picks the first free NVIDIA model that answers, and skips one that NVIDIA removes (404) or that stalls (needs `NVIDIA_API_KEY`)
 2. **Groq**: `GROQ_MODEL=openai/gpt-oss-120b` (needs `GROQ_API_KEY`)
 3. **Ollama** (local): `OLLAMA_MODEL=qwen3:8b` (set `OLLAMA_ENABLED=true` for the API **and** `OLLAMA_DISABLED=false` for the harness)
 
@@ -394,7 +394,7 @@ Results go to `eval/results/latest.md` and `latest.json`, and are shown on the M
 | Google: "access blocked / app not verified" | Add your account as a **test user** on the OAuth consent screen. |
 | Zoho: `invalid_client` or empty data | Wrong DC. Use api-console.**zoho.in** with `ZOHO_DC=in`, and the correct `ZOHO_ORG_ID`. |
 | WhatsApp QR never shows / keeps logging out | Delete the wa-bridge `/data/auth` volume and re-pair. Check you are not linked on too many devices. |
-| NIM 404 / model not found | The model ID is not available to your key. Change `NIM_MODEL` etc. The router falls back to Groq meanwhile. |
+| NIM 404 / model not found | NVIDIA removed that model. With `NIM_MODEL=auto` (or a comma list) the next model is used automatically; Connections → AI models shows which one. |
 | Voice notes not transcribed | `GROQ_API_KEY` is missing. In DEMO_MODE, the fixture transcript is used. |
 | Audit log says chain broken | Someone edited `audit_log` rows directly. Use `GET /audit/verify` to see where the chain breaks. |
 | Out of memory on build | Increase the Docker / WSL memory, or start fewer services first (`docker compose up postgres redis minio api web`). |

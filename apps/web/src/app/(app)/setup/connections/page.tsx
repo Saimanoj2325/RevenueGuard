@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { isDemo } from '@/lib/config';
 import { minsAgo } from '@/lib/format';
 import { useLive } from '@/lib/hooks';
+import type { SheetSaved } from '@/lib/v2types';
 import { useAuth } from '@/lib/store';
 import { useT } from '@/i18n';
 import type { ConnectorV2, WaChat, WaChatKind } from '@/lib/v2types';
@@ -40,10 +41,12 @@ function healthOf(c?: ConnectorV2): { word: string; tone: 'green' | 'amber' | 'r
   return { word: 'Working', tone: 'green' };
 }
 
-function ConnCard({ name, c, onReconnect, onChange }: { name: string; c?: ConnectorV2; onReconnect: () => void; onChange?: () => void }) {
+function ConnCard({ name, c, onReconnect, onChange, sheet }: { name: string; c?: ConnectorV2; onReconnect: () => void; onChange?: () => void; sheet?: SheetSaved | null }) {
   const m = META[name];
-  const h = healthOf(c);
-  const notLinked = !c || c.status === 'disconnected';
+  let h = healthOf(c);
+  const notLinked = !c || c.status === 'disconnected' || (name === 'sheets' && !!sheet && !sheet.spreadsheet_id);
+  if (name === 'sheets' && sheet && !sheet.spreadsheet_id) h = { word: 'Not finished', tone: 'amber' };
+  const mapped = sheet ? Object.values(sheet.mapping || {}).filter((v) => v !== 'ignore').length : 0;
   return (
     <Card className="flex flex-col p-4 sm:p-5">
       <div className="flex items-center justify-between gap-2">
@@ -54,7 +57,9 @@ function ConnCard({ name, c, onReconnect, onChange }: { name: string; c?: Connec
         <div className="mt-2 text-[13.5px] text-ink-3">{m.todo}</div>
       ) : (
         <>
-          {(c?.account || c?.detail) && <div className="mt-2 text-[13px] text-ink-3">{[c?.account, c?.detail].filter(Boolean).join(' · ')}</div>}
+          {name === 'sheets' && sheet?.spreadsheet_id ? (
+            <div className="mt-2 text-[13.5px]"><b>{sheet.title || 'Your sheet'}</b> › tab <b>{sheet.tab || '?'}</b>{mapped ? <span className="text-ink-3"> · {mapped} columns mapped</span> : null}</div>
+          ) : (c?.account || c?.detail) && <div className="mt-2 text-[13px] text-ink-3">{[c?.account, c?.detail].filter(Boolean).join(' · ')}</div>}
           <div className="mt-1 text-[13.5px]">{c?.error_plain && h.tone !== 'green' ? <span className={h.tone === 'red' ? 'text-red' : 'text-amber'}>{c.error_plain}</span> : c?.last_sync ? `Synced ${minsAgo(c.last_sync)}` : 'Waiting for first sync'}</div>
         </>
       )}
@@ -82,6 +87,8 @@ export default function ConnectionsPage() {
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetQ = useLive(() => api.sheetConfig().catch(() => null), [], (e) => e.type === 'connector.updated', 200);
+  const sheet = sheetQ.data ?? null;
   const openSheet = () => { setSheetOpen(true); setTimeout(() => document.getElementById('sheet-picker')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
   // result of the Google sign-in redirect (?connected=google or ?google_error=...)
   const [oauthMsg, setOauthMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null);
@@ -138,10 +145,10 @@ export default function ConnectionsPage() {
       <PageHead title={t('connections.title')} sub={t('connections.sub')} />
       {q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : !q.data ? <Skeleton className="h-[130px]" /> : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {['google', 'whatsapp', 'sheets', acct].map((n) => <ConnCard key={n} name={n} c={byName(n)} onReconnect={() => reconnect(n)} onChange={n === 'sheets' ? openSheet : undefined} />)}
+          {['google', 'whatsapp', 'sheets', acct].map((n) => <ConnCard key={n} name={n} c={byName(n)} sheet={n === 'sheets' ? sheet : undefined} onReconnect={() => reconnect(n)} onChange={n === 'sheets' ? openSheet : undefined} />)}
         </div>
       )}
-      {q.data && (sheetOpen || (byName('sheets')?.status !== 'connected' && byName('google')?.status === 'connected')) && (
+      {q.data && (sheetOpen || ((byName('sheets')?.status !== 'connected' || (!sheetQ.loading && !!sheetQ.data && !sheet?.spreadsheet_id)) && byName('google')?.status === 'connected')) && (
         <Card id="sheet-picker" className="mt-3 p-4 sm:p-5">
           {byName('google')?.status !== 'connected' && !isDemo() ? (
             <div className="text-[13.5px] text-amber">Connect Gmail first. The delivery sheet is read with the same Google sign-in.</div>
@@ -149,9 +156,9 @@ export default function ConnectionsPage() {
             <SheetPicker
               eyebrow="Delivery sheet"
               doneLabel="Save sheet"
-              initialId={String((byName('sheets')?.config as any)?.spreadsheet_id ?? '')}
-              initialTab={String((byName('sheets')?.config as any)?.range ?? 'Oct!').split('!')[0] || 'Oct'}
-              onDone={() => { setSheetOpen(false); q.reload(); }}
+              initialId={sheet?.spreadsheet_id ?? ''}
+              initialTab={sheet?.tab ?? ''}
+              onDone={() => { setSheetOpen(false); q.reload(); sheetQ.reload(); }}
             />
           )}
           {sheetOpen && <button className="btn-ghost btn-sm mt-3" onClick={() => setSheetOpen(false)}>Close</button>}

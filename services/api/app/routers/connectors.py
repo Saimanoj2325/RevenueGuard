@@ -311,6 +311,7 @@ class SheetsConfig(BaseModel):
     spreadsheet_id: str
     range: str = "Sheet1!A1:H500"
     mapping: dict[str, str] | None = None  # confirmed smart mapping {header: meaning}
+    title: str | None = None  # spreadsheet name, shown on Connections
 
 
 @router.post("/sheets/config")
@@ -320,14 +321,19 @@ async def sheets_config(body: SheetsConfig, user: User = Depends(require_role("a
     from ..models import SheetMapping
     from ..sheet_mapping import MEANINGS
 
+    body.spreadsheet_id = _sheet_id_of(body.spreadsheet_id) or body.spreadsheet_id
     c = await get_connector(session, user.tenant_id, "sheets")
-    cfg = {**(c.config or {}), "spreadsheet_id": body.spreadsheet_id, "range": body.range}
+    cfg = {**(c.config or {}), "spreadsheet_id": body.spreadsheet_id, "range": body.range,
+           "tab": body.range.split("!")[0].strip("'") if "!" in body.range else None,
+           "saved_by": user.email, "saved_at": utcnow().isoformat()}
+    if body.title:
+        cfg["title"] = body.title
     if body.mapping is not None:
         bad = {h: m for h, m in body.mapping.items() if m not in MEANINGS}
         if bad:
             raise HTTPException(422, f"unknown column meanings: {bad}; allowed: {', '.join(MEANINGS)}")
         cfg["mapping"] = body.mapping
-        tab = body.range.split("!")[0] if "!" in body.range else "Sheet1"
+        tab = body.range.split("!")[0].strip("'") if "!" in body.range else "Sheet1"
         row = (await session.execute(select(SheetMapping).where(SheetMapping.tenant_id == user.tenant_id, SheetMapping.sheet_id == body.spreadsheet_id, SheetMapping.tab == tab))).scalar_one_or_none()
         if row is None:
             row = SheetMapping(tenant_id=user.tenant_id, sheet_id=body.spreadsheet_id, tab=tab, columns=[])
@@ -337,6 +343,82 @@ async def sheets_config(body: SheetsConfig, user: User = Depends(require_role("a
     await append_audit(session, user.tenant_id, "connector.sheets_config", user.email, body.model_dump())
     await session.commit()
     return {"ok": True}
+
+
+def _sheet_id_of(x: str | None) -> str | None:
+    """Full Google Sheets link or bare ID -> ID."""
+    import re
+
+    if not x:
+        return x
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", x) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", x)
+    return m.group(1) if m else x.strip()
+
+
+def _tab_score(header: list[str]) -> int:
+    from ..sheet_mapping import SYNONYMS, norm_header
+
+    hit = set()
+    for h in header:
+        nh = norm_header(h)
+        for meaning, syns in SYNONYMS.items():
+            if nh in syns or nh.replace(" ", "_") == meaning:
+                hit.add(meaning)
+    return len(hit)
+
+
+async def _sheets_adapter(session, tenant_id):
+    from ..connectors.base import NotConnected
+    from ..connectors.registry import adapter
+
+    try:
+        return await adapter(session, tenant_id, "sheets")
+    except NotConnected as e:
+        raise HTTPException(409, "Connect Google first. The sheet is read with the same Google sign-in as Gmail.") from e
+
+
+@router.get("/sheets/config")
+async def sheets_get_config(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    """What is saved now: which spreadsheet, which tab, and the confirmed column meanings."""
+    c = await get_connector(session, user.tenant_id, "sheets")
+    cfg = c.config or {}
+    rng = cfg.get("range") or ""
+    return {"spreadsheet_id": cfg.get("spreadsheet_id"), "title": cfg.get("title"), "tab": cfg.get("tab") or (rng.split("!")[0].strip("'") if "!" in rng else None),
+            "mapping": cfg.get("mapping") or {}, "saved_by": cfg.get("saved_by"), "saved_at": cfg.get("saved_at")}
+
+
+@router.get("/sheets/files")
+async def sheets_files(user: User = Depends(require_role("admin")), session: AsyncSession = Depends(get_session)):
+    """The connected Google account's spreadsheets, newest first, so nobody pastes links."""
+    from ..connectors.base import ConnectorError
+
+    a = await _sheets_adapter(session, user.tenant_id)
+    try:
+        return {"files": await a.list_files()}
+    except ConnectorError as e:
+        raise HTTPException(502, f"Could not list your Google Sheets: {str(e)[:200]}") from e
+
+
+@router.get("/sheets/tabs")
+async def sheets_tabs(sheet_id: str, user: User = Depends(require_role("admin")), session: AsyncSession = Depends(get_session)):
+    """Tabs of one spreadsheet, plus the one that looks like the delivery register (most known column names)."""
+    from ..connectors.base import ConnectorError
+
+    a = await _sheets_adapter(session, user.tenant_id)
+    try:
+        info = await a.list_tabs(_sheet_id_of(sheet_id))
+    except ConnectorError as e:
+        raise HTTPException(502, f"Could not open the sheet: {str(e)[:200]}") from e
+    tabs = info.get("tabs") or []
+    for t in tabs:
+        t["score"] = _tab_score(t.get("header") or [])
+    best = max(tabs, key=lambda t: (t["score"], -tabs.index(t)), default=None) if tabs else None
+    # a tie on score -> prefer the last tab (newest month is usually added at the end)
+    if best is not None:
+        top = [t for t in tabs if t["score"] == best["score"]]
+        best = top[-1]
+    return {"sheet_id": _sheet_id_of(sheet_id), "title": info.get("title"), "tabs": [{k: t.get(k) for k in ("title", "rows", "header", "score")} for t in tabs],
+            "suggested": best["title"] if best else None}
 
 
 class ProposeMappingIn(BaseModel):
@@ -354,13 +436,30 @@ async def sheets_propose_mapping(body: ProposeMappingIn, user: User = Depends(re
     from ..models import SheetMapping
     from ..sheet_mapping import propose
 
+    body.sheet_id = _sheet_id_of(body.sheet_id)
+    title = None
     try:
         a = await adapter(session, user.tenant_id, "sheets")
         values = await a.read_raw(body.sheet_id, body.tab)
+        if hasattr(a, "list_tabs") and body.sheet_id:
+            try:
+                title = (await a.list_tabs(body.sheet_id)).get("title")
+            except ConnectorError:
+                title = None
     except NotConnected as e:
-        raise HTTPException(409, "Connect Google Sheets first.") from e
+        raise HTTPException(409, "Connect Google first. The sheet is read with the same Google sign-in as Gmail.") from e
     except ConnectorError as e:
-        raise HTTPException(502, f"Could not read the sheet: {str(e)[:160]}") from e
+        msg = str(e)
+        if "Unable to parse range" in msg:
+            raise HTTPException(422, f"There is no tab called \"{body.tab}\" in that sheet. Pick a tab from the list.") from e
+        if "HTTP 403" in msg:
+            raise HTTPException(403, "Google says this account cannot open that sheet. Use a sheet owned by or shared with the Google account you connected.") from e
+        raise HTTPException(502, f"Could not read the sheet: {msg[:200]}") from e
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001  never a bare 500: say what broke
+        _log.exception("sheets.propose_failed")
+        raise HTTPException(502, f"Could not read the sheet ({type(e).__name__}: {str(e)[:160]})") from e
     if not values:
         raise HTTPException(422, "The sheet looks empty. Put the column names in the first row.")
     cols = await propose(values, session=session, tenant_id=user.tenant_id)
@@ -373,7 +472,7 @@ async def sheets_propose_mapping(body: ProposeMappingIn, user: User = Depends(re
     row.columns = cols
     await append_audit(session, user.tenant_id, "connector.sheets_mapping_proposed", user.email, {"sheet_id": sid, "tab": tab, "columns": [{k: c[k] for k in ("header", "meaning", "confidence")} for c in cols]})
     await session.commit()
-    return {"columns": cols}
+    return {"columns": cols, "title": title, "tab": tab, "rows": max(0, len(values) - 1)}
 
 
 # ------------------------------------------------------------------ WhatsApp chat picker (allowlist)

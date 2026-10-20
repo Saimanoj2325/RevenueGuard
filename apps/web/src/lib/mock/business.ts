@@ -942,6 +942,19 @@ export async function handleV2(mb: any, method: string, path: string, params: UR
     }
     return { items: clone(biz.chats) };
   }
+  if (path === '/connectors/sheets/files') {
+    return { files: [{ id: '1YqDispatchRegister2026', name: 'Dispatch Register 2026', modified_at: new Date().toISOString() }, { id: '1YqPartyLedger2026', name: 'Party ledger 2026-27', modified_at: new Date(Date.now() - 2 * 864e5).toISOString() }] };
+  }
+  if (path === '/connectors/sheets/tabs') {
+    const head = ['PO No.', 'Party', 'Item', 'Qty', 'Disp Qty', 'Bal', 'Dt', 'Driver'];
+    return { sheet_id: params.get('sheet_id'), title: params.get('sheet_id') === '1YqPartyLedger2026' ? 'Party ledger 2026-27' : 'Dispatch Register 2026', suggested: 'Oct',
+      tabs: [{ title: 'Sep', rows: 180, header: head, score: 5 }, { title: 'Oct', rows: 214, header: head, score: 5 }, { title: 'Notes', rows: 12, header: ['Note'], score: 0 }] };
+  }
+  if (path === '/connectors/sheets/config' && method === 'GET') {
+    const cfg = mb.db.connectors.sheets?.config ?? {};
+    const rng = String(cfg.range ?? '');
+    return { spreadsheet_id: cfg.spreadsheet_id ?? null, title: cfg.title ?? (cfg.spreadsheet_id ? 'Dispatch Register 2026' : null), tab: cfg.tab ?? (rng.includes('!') ? rng.split('!')[0] : null), mapping: cfg.mapping ?? {}, saved_by: cfg.saved_by ?? null, saved_at: cfg.saved_at ?? null };
+  }
   if (path === '/connectors/sheets/propose-mapping') {
     return {
       title: 'Dispatch Register 2026', tab: body?.tab ?? 'Oct', rows: 214,

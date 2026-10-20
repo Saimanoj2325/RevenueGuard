@@ -75,6 +75,10 @@ async def chat_with_tools(task: str, messages: list[dict[str, Any]], tools: list
         if p.mock or not p.api_key:
             continue
         t0 = time.perf_counter()
+        if p.name == "nim":
+            from .nim_models import pick
+
+            p.model = await pick("text")
 
         async def _do(p=p):
             client = AsyncOpenAI(base_url=p.base_url, api_key=p.api_key, timeout=s.llm_timeout_seconds, max_retries=0)
@@ -97,6 +101,11 @@ async def chat_with_tools(task: str, messages: list[dict[str, Any]], tools: list
             resp, proto = await p.breaker.call(lambda: asyncio.wait_for(_do(), s.llm_timeout_seconds + 2))
         except Exception as e:  # noqa: BLE001  (timeouts, HTTP errors, open breaker)
             errors.append(f"{p.name}: {type(e).__name__}: {str(e)[:120]}")
+            if p.name == "nim":
+                from .nim_models import looks_gone, mark_bad
+
+                if looks_gone(e):
+                    mark_bad(p.model, f"{type(e).__name__}: {str(e)[:120]}")
             log.warning("tool_loop.provider_failed", task=task, provider=p.name, error=str(e)[:160])
             continue
         msg = resp.choices[0].message

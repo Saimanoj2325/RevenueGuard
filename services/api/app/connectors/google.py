@@ -14,7 +14,7 @@ import httpx
 from ..config import get_settings
 from ..models import Connector
 from ..security import decrypt_json, encrypt_json
-from .base import ConnectorTimeout, ConnectorUnavailable, DriveAdapter, GmailAdapter, NotConnected, SheetsAdapter
+from .base import ConnectorError, ConnectorTimeout, ConnectorUnavailable, DriveAdapter, GmailAdapter, NotConnected, SheetsAdapter
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -105,7 +105,13 @@ class _GoogleBase:
             return None
         if r.status_code >= 500 or r.status_code == 429:
             raise ConnectorUnavailable(self.conn.name, f"HTTP {r.status_code}")
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # 400 (bad tab/range) and 403 (no access / API not enabled) carry a plain message from Google
+            try:
+                msg = (r.json().get("error") or {}).get("message") or r.text
+            except Exception:  # noqa: BLE001
+                msg = r.text
+            raise ConnectorError(self.conn.name, f"HTTP {r.status_code}: {str(msg)[:200]}", retryable=False)
         return r.json() if r.content else {}
 
 
@@ -215,6 +221,18 @@ class LiveGmail(_GoogleBase, GmailAdapter):
         return (res or {}).get("id", "")
 
 
+def _q(rng: str) -> str:
+    """Quote the tab part of an A1 range ('Dispatch Oct'!A1:Z21) so tab names with spaces work."""
+    from urllib.parse import quote
+
+    if "!" in rng:
+        tab, cells = rng.rsplit("!", 1)
+        if not tab.startswith("'"):
+            tab = "'" + tab.replace("'", "''") + "'"
+        rng = f"{tab}!{cells}"
+    return quote(rng, safe="")
+
+
 class LiveSheets(_GoogleBase, SheetsAdapter):
     KEYMAP = {
         "po": "po_ref", "po_ref": "po_ref", "po no": "po_ref", "po number": "po_ref", "order": "po_ref", "reference": "po_ref",
@@ -230,7 +248,7 @@ class LiveSheets(_GoogleBase, SheetsAdapter):
         sid, rng = cfg.get("spreadsheet_id"), cfg.get("range", "Sheet1!A1:H500")
         if not sid:
             raise ConnectorUnavailable("sheets", "spreadsheet not configured (POST /connectors/sheets/config)", retryable=False)
-        data = await self._req("GET", f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{rng}")
+        data = await self._req("GET", f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{_q(rng)}")
         values = (data or {}).get("values", [])
         if not values:
             return []
@@ -247,8 +265,29 @@ class LiveSheets(_GoogleBase, SheetsAdapter):
         if not sid:
             raise ConnectorUnavailable("sheets", "spreadsheet not configured", retryable=False)
         rng = f"{tab}!A1:Z{limit}" if tab else (cfg.get("range") or "Sheet1!A1:H500").split("!")[0] + f"!A1:Z{limit}"
-        data = await self._req("GET", f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{rng}")
+        data = await self._req("GET", f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{_q(rng)}")
         return (data or {}).get("values", [])
+
+    async def list_files(self, limit=30):
+        """The user's Google Sheets, newest first (Drive read-only scope)."""
+        data = await self._req("GET", "https://www.googleapis.com/drive/v3/files", params={
+            "q": "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false", "orderBy": "modifiedTime desc",
+            "pageSize": limit, "fields": "files(id,name,modifiedTime,owners(displayName))"})
+        return [{"id": f["id"], "name": f.get("name") or "(untitled)", "modified_at": f.get("modifiedTime")} for f in (data or {}).get("files", [])]
+
+    async def list_tabs(self, sheet_id):
+        """Spreadsheet title + its tabs, each with its header row (so we can tell which tab holds deliveries)."""
+        meta = await self._req("GET", f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}",
+                               params={"fields": "properties.title,sheets.properties(title,index,gridProperties.rowCount)"})
+        if meta is None:
+            raise ConnectorError("sheets", "We could not open that sheet. Check the link, and that it belongs to the Google account you connected.", retryable=False)
+        tabs = [{"title": t["properties"]["title"], "rows": (t["properties"].get("gridProperties") or {}).get("rowCount")} for t in meta.get("sheets", [])]
+        if tabs:
+            hdr = await self._req("GET", f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values:batchGet",
+                                  params=[("ranges", f"'{t['title']}'!A1:Z1") for t in tabs])
+            for t, vr in zip(tabs, (hdr or {}).get("valueRanges", [])):
+                t["header"] = [str(x) for x in ((vr.get("values") or [[]])[0])]
+        return {"title": (meta.get("properties") or {}).get("title"), "tabs": tabs}
 
 
 class LiveDrive(_GoogleBase, DriveAdapter):

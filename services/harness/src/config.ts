@@ -18,7 +18,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       name: 'nim',
       baseUrl: (env.NIM_BASE_URL ?? 'https://integrate.api.nvidia.com/v1').replace(/\/$/, ''),
       apiKey: env.NVIDIA_API_KEY ?? '',
-      model: env.NIM_MODEL ?? 'deepseek-ai/deepseek-v4.1-flash',
+      model: env.NIM_MODEL || 'auto', // preference list, see NIM_BUILTIN in plugins/model-router.ts
       enabled: !!env.NVIDIA_API_KEY && !bool(env.NIM_DISABLED),
       costInPerMTok: num(env.NIM_COST_INR_PER_MTOK_IN, 25),
       costOutPerMTok: num(env.NIM_COST_INR_PER_MTOK_OUT, 100),

@@ -51,7 +51,7 @@ Events go to `POST {API_URL}/internal/agent-events` (HMAC): `{run_id, case_id, t
 
 ## Plugins (`src/plugins/`, interface in `src/core/plugin.ts`, which mirrors the dsh hooks)
 - **(a) `model-router.ts`: model adapter.**
-  - OpenAI-compatible `/chat/completions` router. Order is NIM (`NIM_MODEL` = deepseek-ai/deepseek-v4.1-flash), then Groq (`GROQ_MODEL`), then Ollama (`OLLAMA_MODEL`). Change the order with `LLM_PROVIDER_ORDER`.
+  - OpenAI-compatible `/chat/completions` router. Order is NIM (`NIM_MODEL` = auto: first working model from a built-in list; a 404 moves to the next), then Groq (`GROQ_MODEL`), then Ollama (`OLLAMA_MODEL`). Change the order with `LLM_PROVIDER_ORDER`.
   - A provider is enabled when its key is set. Ollama is on unless `OLLAMA_DISABLED=true`.
   - Each provider has a circuit breaker: it opens after `CB_FAILURE_THRESHOLD` (3) failures and goes half-open after `CB_COOLDOWN_MS` (30 s).
   - Per-call timeout is `LLM_TIMEOUT_MS`, capped by the run's remaining time.

@@ -105,6 +105,20 @@ describe('OpenAI-compatible provider + env config', () => {
     expect(r.tool_calls[0]!.function.name).toBe('laya_decide')
     expect(p.costInr(r.usage)).toBeCloseTo(0.035)
   })
+  it('NIM skips a model NVIDIA pulled (404) and uses the next one', async () => {
+    const seen: string[] = []
+    const fetchImpl = (async (_u: string, init: RequestInit) => {
+      const m = JSON.parse(String(init.body)).model as string
+      seen.push(m)
+      if (m === 'gone/model') return new Response('{"status":404,"title":"Not Found"}', { status: 404 })
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }), { status: 200 })
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider({ name: 'nim', baseUrl: 'http://nim', apiKey: 'k', model: 'gone/model', enabled: true, costInPerMTok: 25, costOutPerMTok: 100 }, { temperature: 0, maxOutputTokens: 16 }, fetchImpl)
+    const r = await p.call(req(), new AbortController().signal)
+    expect(r.content).toBe('OK')
+    expect(seen).toEqual(['gone/model', 'nvidia/nemotron-3.5-super-vl-120b-a12b'])
+    expect(p.model).toBe('nvidia/nemotron-3.5-super-vl-120b-a12b')
+  })
   it('model names and order are env-configurable; disabled providers are skipped', () => {
     const cfg = testConfig({ MOCK_LLM: 'false', NVIDIA_API_KEY: 'n', GROQ_API_KEY: 'g', OLLAMA_DISABLED: 'false', NIM_MODEL: 'custom/nim', GROQ_MODEL: 'custom/groq', OLLAMA_MODEL: 'custom:ollama', LLM_PROVIDER_ORDER: 'groq,nim,ollama' })
     expect(buildProviders(cfg).map((p) => `${p.name}:${p.model}`)).toEqual(['groq:custom/groq', 'nim:custom/nim', 'ollama:custom:ollama'])

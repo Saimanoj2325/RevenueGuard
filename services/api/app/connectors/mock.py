@@ -115,6 +115,17 @@ class MockSheets(SheetsAdapter):
                          (re.search(r"\d{4}-\d{2}-\d{2}", str(r.get("updated_at") or "")) or re.search("", "")).group(0), ""])
         return grid
 
+    async def list_files(self, limit=30):
+        return [{"id": "1YqDispatchRegister2026", "name": "Dispatch Register", "modified_at": "2026-10-20T09:00:00Z"},
+                {"id": "1YqPartyLedger2026", "name": "Party ledger 2026-27", "modified_at": "2026-10-18T09:00:00Z"}][:limit]
+
+    async def list_tabs(self, sheet_id):
+        grid = await self.read_raw(sheet_id, None, 2)
+        return {"title": "Dispatch Register" if sheet_id == "1YqDispatchRegister2026" else "Party ledger 2026-27",
+                "tabs": [{"title": "Sep", "rows": 120, "header": grid[0] if grid else []},
+                         {"title": "Oct", "rows": 214, "header": grid[0] if grid else []},
+                         {"title": "Notes", "rows": 20, "header": ["Note"]}]}
+
 
 class MockDrive(DriveAdapter):
     def __init__(self, session, conn: Connector):
